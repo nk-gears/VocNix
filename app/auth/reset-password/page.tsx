@@ -54,7 +54,7 @@ export default function ResetPasswordPage() {
 
       setSuccessMessage('Password reset successfully! Redirecting to login...');
       setTimeout(() => {
-        router.push('/admin/login');
+        router.push('/login');
       }, 1500);
     } catch (err: any) {
       setErrorMessage(err.message || 'Network error updating password.');
@@ -178,7 +178,7 @@ export default function ResetPasswordPage() {
 
         <div className="pt-4 border-t border-slate-800 text-center">
           <Link
-            href="/admin/login"
+            href="/login"
             className="text-xs text-slate-400 hover:text-white transition"
           >
             Return to Login

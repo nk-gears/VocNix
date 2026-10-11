@@ -7,24 +7,27 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const { identifier, password, requiredRole } = body;
 
-    if (!identifier || typeof identifier !== 'string' || !identifier.trim()) {
+    // Missing fields validation
+    if (
+      !identifier ||
+      typeof identifier !== 'string' ||
+      !identifier.trim() ||
+      !password ||
+      typeof password !== 'string'
+    ) {
       return NextResponse.json(
-        { success: false, error: 'Username or email address is required.' },
+        {
+          success: false,
+          message: 'Username/email and password are required',
+          error: 'Username/email and password are required',
+        },
         { status: 400 }
       );
     }
 
-    if (!password || typeof password !== 'string') {
-      return NextResponse.json(
-        { success: false, error: 'Password is required.' },
-        { status: 400 }
-      );
-    }
-
-    const targetRole: UserRole = requiredRole === 'super_admin' ? 'super_admin' : 'admin';
     const cleanIdentifier = identifier.trim().toLowerCase();
 
     // 1. Resolve identifier to profile
@@ -33,23 +36,39 @@ export async function POST(req: NextRequest) {
 
     if (profile) {
       resolvedEmail = profile.email;
-    } else if (!resolvedEmail) {
-      // If entered a username and no profile exists with that username
-      return NextResponse.json(
-        { success: false, error: 'No account found with this username. Please check your username or register.' },
-        { status: 404 }
-      );
     }
 
     let authUserId = profile?.id || '';
+    let authUserMeta: any = null;
 
-    // 2. Real-Time Supabase Auth Credential Verification
+    // 2. Real-Time Supabase Auth Credential Verification (if configured)
     if (isSupabaseConfigured()) {
       const client = getSupabaseClient() || getSupabaseAdmin();
       if (!client) {
         return NextResponse.json(
-          { success: false, error: 'Authentication service temporarily unavailable. Please try again later.' },
+          {
+            success: false,
+            message: 'Authentication service temporarily unavailable. Please try again later.',
+            error: 'Authentication service unavailable',
+          },
           { status: 503 }
+        );
+      }
+
+      // If user typed username, resolve to email before Supabase Auth signIn
+      if (!resolvedEmail && profile?.email) {
+        resolvedEmail = profile.email;
+      }
+
+      if (!resolvedEmail) {
+        // Without an email and without a matching profile, reject uniformly
+        return NextResponse.json(
+          {
+            success: false,
+            message: 'Invalid username/email or password',
+            error: 'Invalid username/email or password',
+          },
+          { status: 401 }
         );
       }
 
@@ -59,114 +78,154 @@ export async function POST(req: NextRequest) {
       });
 
       if (authError || !authData.user) {
-        const errorMsg = authError?.message?.toLowerCase() || '';
-        if (errorMsg.includes('invalid') || errorMsg.includes('credentials')) {
-          return NextResponse.json(
-            { success: false, error: 'Invalid username/email or password.' },
-            { status: 401 }
-          );
-        }
-        if (errorMsg.includes('not found') || errorMsg.includes('no user')) {
-          return NextResponse.json(
-            { success: false, error: 'No account found with this username or email.' },
-            { status: 404 }
-          );
-        }
         return NextResponse.json(
-          { success: false, error: authError?.message || 'Authentication failed.' },
+          {
+            success: false,
+            message: 'Invalid username/email or password',
+            error: 'Invalid username/email or password',
+          },
           { status: 401 }
         );
       }
 
       authUserId = authData.user.id;
+      authUserMeta = authData.user.user_metadata || null;
 
       // Refresh / retrieve verified database profile
       if (!profile) {
         profile = await Repository.getProfileById(authUserId);
       }
-    } else {
-      // Fallback in-memory verification for local dev when external Supabase is not connected
       if (!profile) {
+        profile = await Repository.getProfileByEmail(resolvedEmail);
+      }
+    } else {
+      // Fallback verification for local dev when external Supabase is not configured
+      if (!profile) {
+        profile = await Repository.getProfileByEmail(cleanIdentifier);
+      }
+
+      if (!profile) {
+        // Do not reveal whether user exists
         return NextResponse.json(
-          { success: false, error: 'No account found with this username or email.' },
-          { status: 404 }
+          {
+            success: false,
+            message: 'Invalid username/email or password',
+            error: 'Invalid username/email or password',
+          },
+          { status: 401 }
         );
       }
 
       const isValidPass = Repository.verifyLocalPassword(profile.id, password);
       if (!isValidPass) {
         return NextResponse.json(
-          { success: false, error: 'Invalid username/email or password.' },
+          {
+            success: false,
+            message: 'Invalid username/email or password',
+            error: 'Invalid username/email or password',
+          },
           { status: 401 }
         );
       }
     }
 
-    // If profile still not found, check if it's the default seeded accounts
     if (!profile) {
-      profile = await Repository.getProfileByEmail(resolvedEmail);
+      return NextResponse.json(
+        {
+          success: false,
+          message: 'Invalid username/email or password',
+          error: 'Invalid username/email or password',
+        },
+        { status: 401 }
+      );
     }
 
-    // 3. Strict Server-Side Role Verification
-    const userRole: UserRole = profile?.role || (resolvedEmail === 'superadmin@vocnix.com' ? 'super_admin' : 'admin');
+    // Check account status if deactivated or suspended
+    if (profile.status === 'inactive' || profile.status === 'suspended' || profile.status === 'disabled') {
+      return NextResponse.json(
+        {
+          success: false,
+          message: 'This account has been deactivated. Please contact an administrator.',
+          error: 'Account deactivated',
+        },
+        { status: 403 }
+      );
+    }
 
-    if (targetRole === 'super_admin') {
-      if (userRole !== 'super_admin') {
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'Access denied: This account has Admin privileges, not Super Admin. Please use the Admin Login page.',
-            code: 'WRONG_ROLE_ADMIN',
-          },
-          { status: 403 }
-        );
-      }
-    } else if (targetRole === 'admin') {
-      // Admin login allows admin (and super_admin can also access admin console if desired)
-      if (userRole !== 'admin' && userRole !== 'super_admin') {
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'Access denied: You do not have permissions for the Admin Console.',
-            code: 'WRONG_ROLE',
-          },
-          { status: 403 }
-        );
-      }
+    // 3. Strict Server-Side Role Retrieval (Database is single source of truth)
+    const userRole: UserRole =
+      profile.role ||
+      (resolvedEmail === 'superadmin@vocnix.com' || cleanIdentifier === 'superadmin'
+        ? 'super_admin'
+        : 'admin');
+
+    // Strict role validation if requiredRole is specified
+    if (requiredRole === 'super_admin' && userRole !== 'super_admin') {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'WRONG_ROLE_ADMIN',
+          message: 'Access restricted: Super Admin privileges required. Please use the Admin Login portal.',
+          error: 'Access restricted: Super Admin privileges required. Please use the Admin Login portal.',
+        },
+        { status: 403 }
+      );
     }
 
     // 4. Create authoritative user session
     const now = Date.now();
+    const metaUsername = authUserMeta?.username || (!cleanIdentifier.includes('@') ? cleanIdentifier : '');
+    const metaFullName = authUserMeta?.full_name || authUserMeta?.name || '';
+
+    const username = (
+      profile.username ||
+      metaUsername ||
+      resolvedEmail.split('@')[0]
+    ).trim();
+
+    const fullName = (
+      profile.full_name ||
+      metaFullName ||
+      ''
+    ).trim();
+
+    const name = fullName || username || resolvedEmail.split('@')[0];
+
     const session: UserSession = {
-      userId: authUserId || profile?.id || resolvedEmail,
-      email: resolvedEmail,
-      username: profile?.username || resolvedEmail.split('@')[0],
-      name: profile?.full_name || profile?.username || resolvedEmail.split('@')[0],
+      userId: authUserId || profile.id || resolvedEmail,
+      email: resolvedEmail || profile.email,
+      username,
+      full_name: fullName || undefined,
+      name,
       role: userRole,
       createdAt: now,
       expiresAt: now + 7 * 24 * 60 * 60 * 1000, // 7 days
     };
 
     const signedToken = await signSession(session);
-    const redirectUrl = targetRole === 'super_admin' ? '/admin' : '/dashboard';
+    const redirectUrl = userRole === 'super_admin' ? '/admin' : '/dashboard';
 
     const response = NextResponse.json({
       success: true,
-      message: 'Login successful.',
+      message: 'Login successful',
       redirectUrl,
       user: {
         id: session.userId,
-        email: session.email,
         username: session.username,
-        name: session.name,
+        email: session.email,
         role: session.role,
+        name: session.name,
       },
     });
+
+    // Determine cookie secure flag: enable in production or over HTTPS connections
+    const forwardedProto = req.headers.get('x-forwarded-proto');
+    const isHttps = process.env.NODE_ENV === 'production' || forwardedProto === 'https' || req.nextUrl?.protocol === 'https:';
 
     // Set secure HTTP-only session cookie
     response.cookies.set(SESSION_COOKIE_NAME, signedToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: isHttps,
       sameSite: 'lax',
       path: '/',
       maxAge: 7 * 24 * 60 * 60,
@@ -176,7 +235,11 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     console.error('[API /api/auth/login] Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'An unexpected server error occurred. Please try again.' },
+      {
+        success: false,
+        message: 'An unexpected server error occurred. Please try again.',
+        error: err.message || 'Server error',
+      },
       { status: 500 }
     );
   }

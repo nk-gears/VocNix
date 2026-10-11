@@ -3,7 +3,7 @@
 import { useState, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Activity, Lock, Mail, User, Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight, Shield } from 'lucide-react';
+import { Activity, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight, Shield } from 'lucide-react';
 
 function AdminLoginForm() {
   const router = useRouter();
@@ -24,7 +24,6 @@ function AdminLoginForm() {
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    // Client-side validation
     if (!identifier.trim()) {
       setErrorMessage('Please enter your username or registered email address.');
       return;
@@ -69,23 +68,23 @@ function AdminLoginForm() {
 
   return (
     <div className="min-h-[85vh] flex items-center justify-center px-4 sm:px-6 lg:px-8 py-12">
-      <div className="max-w-md w-full space-y-8 bg-slate-900/90 border border-slate-800 rounded-3xl p-8 sm:p-10 shadow-2xl backdrop-blur relative overflow-hidden">
+      <div className="max-w-md w-full space-y-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 sm:p-10 shadow-2xl backdrop-blur relative overflow-hidden transition-colors">
         {/* Glow accent */}
         <div className="absolute -top-24 -left-24 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
         {/* Header */}
         <div className="text-center space-y-3">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 mx-auto shadow-inner">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 mx-auto shadow-inner">
             <Activity className="w-7 h-7" />
           </div>
           <div className="space-y-1">
-            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase tracking-wider">
+            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 uppercase tracking-wider">
               Organization Admin
             </span>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
               Admin Login
             </h1>
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-slate-600 dark:text-slate-400">
               Sign in to manage live event translation rooms and operations.
             </p>
           </div>
@@ -93,18 +92,18 @@ function AdminLoginForm() {
 
         {/* Notification alerts */}
         {errorMessage && (
-          <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 flex items-start space-x-3 text-red-300 text-xs">
-            <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+          <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 flex items-start space-x-3 text-red-700 dark:text-red-300 text-xs">
+            <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
             <div>
-              <strong className="font-semibold text-red-200">Login Error: </strong>
+              <strong className="font-semibold text-red-800 dark:text-red-200">Login Error: </strong>
               <span>{errorMessage}</span>
             </div>
           </div>
         )}
 
         {successMessage && (
-          <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-start space-x-3 text-emerald-300 text-xs">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+          <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-start space-x-3 text-emerald-700 dark:text-emerald-300 text-xs">
+            <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
             <span>{successMessage}</span>
           </div>
         )}
@@ -113,11 +112,11 @@ function AdminLoginForm() {
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Username / Email */}
           <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
               Username or Email
             </label>
             <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 dark:text-slate-500">
                 <User className="w-4 h-4" />
               </div>
               <input
@@ -127,7 +126,7 @@ function AdminLoginForm() {
                 placeholder="admin_username or email@domain.com"
                 required
                 disabled={loading}
-                className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-950/70 border border-slate-800 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500 transition disabled:opacity-50"
+                className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-300 dark:border-slate-800 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500 transition disabled:opacity-50"
               />
             </div>
           </div>
@@ -135,18 +134,18 @@ function AdminLoginForm() {
           {/* Password */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                 Password
               </label>
               <Link
                 href="/admin/forgot-password"
-                className="text-xs text-emerald-400 hover:text-emerald-300 transition"
+                className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline transition"
               >
                 Forgot Password?
               </Link>
             </div>
             <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 dark:text-slate-500">
                 <Lock className="w-4 h-4" />
               </div>
               <input
@@ -156,12 +155,12 @@ function AdminLoginForm() {
                 placeholder="••••••••"
                 required
                 disabled={loading}
-                className="w-full pl-10 pr-11 py-3 rounded-xl bg-slate-950/70 border border-slate-800 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500 transition disabled:opacity-50"
+                className="w-full pl-10 pr-11 py-3 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-300 dark:border-slate-800 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500 transition disabled:opacity-50"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300 transition"
+                className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 transition"
                 tabIndex={-1}
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -178,7 +177,7 @@ function AdminLoginForm() {
             {loading ? (
               <div className="flex items-center space-x-2">
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>Authenticating with Supabase...</span>
+                <span>Fetching your account...</span>
               </div>
             ) : (
               <>
@@ -190,24 +189,24 @@ function AdminLoginForm() {
         </form>
 
         {/* Links to Signup and Super Admin */}
-        <div className="pt-4 border-t border-slate-800 space-y-3 text-center text-xs">
-          <p className="text-slate-400">
+        <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3 text-center text-xs">
+          <p className="text-slate-600 dark:text-slate-400">
             Don&apos;t have an Admin account?{' '}
             <Link
               href="/admin/signup"
-              className="text-emerald-400 hover:text-emerald-300 font-semibold underline underline-offset-2 transition"
+              className="text-emerald-600 dark:text-emerald-400 hover:underline font-semibold transition"
             >
               Sign up as Admin
             </Link>
           </p>
 
-          <p className="text-slate-500">
+          <p className="text-slate-500 dark:text-slate-400">
             Platform Owner?{' '}
             <Link
               href="/super-admin/login"
-              className="text-amber-400/90 hover:text-amber-300 font-medium transition inline-flex items-center space-x-1"
+              className="text-amber-600 dark:text-amber-400 hover:underline font-semibold transition inline-flex items-center space-x-1"
             >
-              <Shield className="w-3 h-3" />
+              <Shield className="w-3.5 h-3.5 text-amber-500" />
               <span>Super Admin Portal Login →</span>
             </Link>
           </p>

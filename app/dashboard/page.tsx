@@ -722,8 +722,8 @@ export default function DashboardPage() {
               : 'text-slate-400 hover:text-white'
           }`}
         >
-          <Building className="w-4 h-4" />
-          <span>Manage Organization</span>
+          <Settings className="w-4 h-4" />
+          <span>Settings</span>
         </button>
       </div>
 
@@ -1182,7 +1182,6 @@ export default function DashboardPage() {
                 <thead>
                   <tr className="border-b border-slate-800/80 text-xs font-semibold text-slate-400 tracking-wider bg-slate-900/40">
                     <th className="py-4 px-6">Plan</th>
-                    <th className="py-4 px-6">Price (INR)</th>
                     <th className="py-4 px-6">Duration & Quotas</th>
                     <th className="py-4 px-6">Key Capabilities</th>
                     <th className="py-4 px-6 text-right">Action</th>
@@ -1208,9 +1207,6 @@ export default function DashboardPage() {
                               </span>
                             )}
                           </div>
-                        </td>
-                        <td className="py-5 px-6 font-extrabold text-white text-base align-top whitespace-nowrap">
-                          {p.price_label || (p.price_inr === 0 ? '₹0' : `₹${p.price_inr?.toLocaleString('en-IN')} (+ GST)`)}
                         </td>
                         <td className="py-5 px-6 align-top">
                           <ul className="space-y-1.5 text-xs text-slate-300">
@@ -1273,9 +1269,6 @@ export default function DashboardPage() {
                             Current
                           </span>
                         )}
-                      </div>
-                      <div className="text-2xl font-black text-white">
-                        {p.price_label || (p.price_inr === 0 ? '₹0' : `₹${p.price_inr?.toLocaleString('en-IN')} (+ GST)`)}
                       </div>
                       <div className="border-t border-slate-800/80 pt-3 space-y-1.5 text-xs text-slate-300">
                         <div className="font-semibold text-slate-400 uppercase text-[10px] tracking-wider">Duration & Quotas:</div>

@@ -84,7 +84,7 @@ export class AudioService {
       // 2. Setup AudioContext for real-time VU meter
       this.setupLocalAudioAnalyser(this.localAudioTrack.mediaStreamTrack);
 
-      // 3. Connect to LiveKit Room
+      // 3. Connect to real-time audio room
       this.room = new Room({
         adaptiveStream: true,
         dynacast: true,

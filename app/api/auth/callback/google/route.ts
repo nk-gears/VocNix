@@ -131,7 +131,9 @@ export async function GET(req: NextRequest) {
   const session: UserSession = {
     userId: userInfo.id || userInfo.email,
     email: userInfo.email,
-    name: userInfo.name,
+    username: userInfo.email.split('@')[0],
+    full_name: userInfo.name,
+    name: userInfo.name || userInfo.email.split('@')[0],
     avatar: userInfo.picture,
     role: requestedRole,
     createdAt: now,
@@ -142,10 +144,12 @@ export async function GET(req: NextRequest) {
   const targetDestination = requestedRole === 'super_admin' ? '/admin' : '/dashboard';
   const response = NextResponse.redirect(new URL(targetDestination, redirectOrigin));
 
+  const isHttps = redirectOrigin.startsWith('https://');
+
   // Set secure HTTP-only session cookie
   response.cookies.set(SESSION_COOKIE_NAME, signedToken, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: isHttps,
     sameSite: 'lax',
     path: '/',
     maxAge: 7 * 24 * 60 * 60,

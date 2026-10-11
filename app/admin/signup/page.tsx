@@ -109,7 +109,7 @@ export default function AdminSignupPage() {
 
       setSuccessMessage('Account created successfully! Redirecting to login...');
       setTimeout(() => {
-        router.push('/admin/login?registered=true');
+        router.push('/login?registered=true');
       }, 1000);
     } catch (err: any) {
       setErrorMessage(err.message || 'Network error occurred during registration.');
@@ -136,7 +136,7 @@ export default function AdminSignupPage() {
               Create Admin Account
             </h1>
             <p className="text-xs sm:text-sm text-slate-400">
-              Register as an Organization Administrator using Supabase Auth.
+              Register as an Organization Administrator to manage real-time translation.
             </p>
           </div>
         </div>
@@ -302,7 +302,7 @@ export default function AdminSignupPage() {
             {loading ? (
               <div className="flex items-center space-x-2">
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>Registering Account in Supabase...</span>
+                <span>Creating your account...</span>
               </div>
             ) : (
               <>
@@ -319,10 +319,10 @@ export default function AdminSignupPage() {
           <p className="text-slate-400">
             Already have an account?{' '}
             <Link
-              href="/admin/login"
+              href="/login"
               className="text-emerald-400 hover:text-emerald-300 font-semibold underline underline-offset-2 transition"
             >
-              Log in to Admin Portal
+              Sign in to your account
             </Link>
           </p>
         </div>

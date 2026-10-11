@@ -47,7 +47,7 @@ export async function createTranslatorToken(params: {
 
   if (!config.isConfigured && (!config.apiKey || !config.apiSecret)) {
     throw new Error(
-      'LiveKit credentials not configured. Please define LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET in your environment.'
+      'Audio service credentials not configured. Please check your environment settings.'
     );
   }
 
@@ -76,7 +76,7 @@ export async function createAudienceToken(params: {
 
   if (!config.isConfigured && (!config.apiKey || !config.apiSecret)) {
     throw new Error(
-      'LiveKit credentials not configured. Please define LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET in your environment.'
+      'Audio service credentials not configured. Please check your environment settings.'
     );
   }
 

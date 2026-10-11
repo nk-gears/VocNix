@@ -41,7 +41,8 @@ export async function PATCH(
         success: true,
         session: result.session,
         usageMinutes: result.usageMinutes,
-        status: 'idle',
+        status: 'ended',
+        roomStatus: 'idle',
       });
     }
 

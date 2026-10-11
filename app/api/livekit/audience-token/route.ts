@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
         {
           success: false,
           error:
-            'LiveKit server is not configured on the backend. Please provide LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.',
+            'Audio server is not configured on the backend. Please verify your environment settings.',
         },
         { status: 503 }
       );

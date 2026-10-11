@@ -6,12 +6,11 @@ This document guides you through deploying the **VocNix Real-Time Audio Platform
 
 ## 1. Prerequisites for Global Live Audio
 
-Because Vercel hosts serverless web applications, WebRTC audio streams (LiveKit SFU) must connect to a globally accessible WebRTC endpoint:
-- **LiveKit Cloud (Recommended & Free)**:
-  1. Sign up for free at [cloud.livekit.io](https://cloud.livekit.io).
-  2. Create a new project (provides 50 GB free WebRTC audio streaming/month).
-  3. In **Project Settings → Keys**, copy your:
-     - `LIVEKIT_URL` (e.g., `wss://your-project.livekit.cloud`)
+Because Vercel hosts serverless web applications, WebRTC audio streams must connect to a globally accessible WebRTC endpoint:
+- **Audio Server Configuration**:
+  1. Prepare your audio server endpoint.
+  2. In your audio server dashboard, copy your:
+     - `LIVEKIT_URL` (e.g., `wss://your-project.cloud`)
      - `LIVEKIT_API_KEY`
      - `LIVEKIT_API_SECRET`
 
@@ -68,10 +67,10 @@ In your Vercel Project under **Settings → Environment Variables**, add:
 | :--- | :--- |
 | `NEXT_PUBLIC_APP_URL` | `https://your-project.vercel.app` |
 | `NODE_ENV` | `production` |
-| `LIVEKIT_URL` | `wss://<your-project>.livekit.cloud` |
-| `LIVEKIT_API_KEY` | Your LiveKit API key |
-| `LIVEKIT_API_SECRET` | Your LiveKit API secret |
-| `NEXT_PUBLIC_LIVEKIT_URL` | `wss://<your-project>.livekit.cloud` |
+| `LIVEKIT_URL` | `wss://<your-project>.cloud` |
+| `LIVEKIT_API_KEY` | Your audio server API key |
+| `LIVEKIT_API_SECRET` | Your audio server API secret |
+| `NEXT_PUBLIC_LIVEKIT_URL` | `wss://<your-project>.cloud` |
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://<your-project>.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Your Supabase anon key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Your Supabase service role key |

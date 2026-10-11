@@ -76,6 +76,8 @@ function initMemoryStore(): DataStore {
   };
   store.profiles.set(defaultSuperAdmin.id, defaultSuperAdmin);
   store.profiles.set(defaultAdmin.id, defaultAdmin);
+  store.passwords.set(defaultSuperAdmin.id, 'superadmin123');
+  store.passwords.set(defaultAdmin.id, 'admin123');
 
   // Seed the 3 new subscription passes
   const starterPlan: Plan = {
@@ -1835,6 +1837,74 @@ export const Repository = {
   // ==========================================================
   // SUPER ADMIN (PLATFORM OWNER) OPERATIONS
   // ==========================================================
+  async createOrganization(params: {
+    name: string;
+    slug?: string;
+    plan_id?: string;
+    status?: OrgStatus;
+  }): Promise<Organization> {
+    const rawName = params.name.trim();
+    let slug = (params.slug?.trim() || rawName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')).toLowerCase();
+    if (!slug) slug = `org-${Date.now().toString().slice(-6)}`;
+
+    // Ensure slug uniqueness
+    let finalSlug = slug;
+    let counter = 1;
+    while (Array.from(store.organizations.values()).some(o => o.slug === finalSlug)) {
+      finalSlug = `${slug}-${counter++}`;
+    }
+
+    const orgId = randomUUID();
+    const now = new Date().toISOString();
+    const plans = await this.getPlans();
+    const plan = params.plan_id ? plans.find(p => p.id === params.plan_id || p.slug === params.plan_id) : plans[0];
+
+    const newOrg: Organization = {
+      id: orgId,
+      name: rawName,
+      slug: finalSlug,
+      plan_id: plan?.id || 'plan-starter',
+      status: params.status || 'active',
+      created_at: now,
+      updated_at: now,
+    };
+
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        try {
+          const { data, error } = await admin
+            .from('organizations')
+            .insert({
+              id: newOrg.id,
+              name: newOrg.name,
+              slug: newOrg.slug,
+              status: newOrg.status,
+              created_at: newOrg.created_at,
+              updated_at: newOrg.updated_at,
+            })
+            .select('*')
+            .single();
+
+          if (!error && data) {
+            store.organizations.set(data.id, { ...newOrg, ...data, plan_id: newOrg.plan_id });
+            await this.logActivity(data.id, 'ORGANIZATION_CREATED', `Super Admin created organization "${data.name}"`);
+            return store.organizations.get(data.id)!;
+          }
+          if (error) {
+            console.warn('[Repository] createOrganization Supabase error:', error.message);
+          }
+        } catch (err: any) {
+          console.warn('[Repository] createOrganization Supabase catch:', err.message);
+        }
+      }
+    }
+
+    store.organizations.set(newOrg.id, newOrg);
+    await this.logActivity(newOrg.id, 'ORGANIZATION_CREATED', `Super Admin created organization "${newOrg.name}"`);
+    return newOrg;
+  },
+
   async getAllOrganizations(): Promise<Array<Organization & {
     planName: string;
     planPrice: number;
@@ -1843,11 +1913,31 @@ export const Repository = {
     quotaMinutes: number;
     trialEndsAt?: string;
   }>> {
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        try {
+          const { data, error } = await admin.from('organizations').select('*').order('created_at', { ascending: false });
+          if (!error && data) {
+            for (const o of data) {
+              const existing = store.organizations.get(o.id);
+              store.organizations.set(o.id, {
+                ...o,
+                plan_id: existing?.plan_id || o.plan_id || 'plan-starter',
+              } as Organization);
+            }
+          }
+        } catch (err) {
+          console.warn('[Repository] getAllOrganizations supabase error:', err);
+        }
+      }
+    }
+
     const orgs = Array.from(store.organizations.values());
     const plans = await this.getPlans();
 
     return orgs.map(org => {
-      const plan = plans.find(p => p.id === org.plan_id) || plans[0];
+      const plan = plans.find(p => p.id === org.plan_id || p.slug === org.plan_id) || plans[0];
       const orgEvents = Array.from(store.events.values()).filter(e => e.organization_id === org.id);
       const orgUsage = Array.from(store.usageRecords.values())
         .filter(u => u.organization_id === org.id)
@@ -1855,11 +1945,11 @@ export const Repository = {
 
       return {
         ...org,
-        planName: plan.name,
-        planPrice: plan.price_cents / 100,
+        planName: plan?.name || 'Starter Pass',
+        planPrice: (plan?.price_cents || 0) / 100,
         totalEvents: orgEvents.length,
         usedMinutes: Number(orgUsage.toFixed(2)),
-        quotaMinutes: plan.monthly_minute_quota,
+        quotaMinutes: plan?.monthly_minute_quota || 60,
         trialEndsAt: (org as any).trial_ends_at || new Date(Date.now() + 30 * 86400000).toISOString(),
       };
     });
@@ -1959,16 +2049,34 @@ export const Repository = {
       const admin = getSupabaseAdmin();
       if (admin) {
         try {
-          const { data, error } = await admin.from('profiles').select('*').eq('id', userId).single();
+          const { data, error } = await admin.from('profiles').select('*').eq('id', userId).maybeSingle();
           if (!error && data) {
             const profile = data as any;
-            if (!profile.role || !profile.username) {
+            if (!profile.role || !profile.username || !profile.full_name) {
               const { data: userData } = await admin.auth.admin.getUserById(userId);
               profile.role = profile.role || (userData?.user?.user_metadata?.role as UserRole) || 'admin';
               profile.username = profile.username || userData?.user?.user_metadata?.username || (profile.email || '').split('@')[0];
+              profile.full_name = profile.full_name || userData?.user?.user_metadata?.full_name || userData?.user?.user_metadata?.name || profile.username;
             }
             store.profiles.set(profile.id, profile as Profile);
             return profile as Profile;
+          }
+
+          // Fallback if profiles row does not exist yet: retrieve directly from Supabase Auth user metadata
+          const { data: userData } = await admin.auth.admin.getUserById(userId);
+          if (userData?.user) {
+            const u = userData.user;
+            const p: Profile = {
+              id: u.id,
+              email: u.email || '',
+              username: u.user_metadata?.username || (u.email || '').split('@')[0],
+              full_name: u.user_metadata?.full_name || u.user_metadata?.name || u.user_metadata?.username || (u.email || '').split('@')[0],
+              role: (u.user_metadata?.role as UserRole) || 'admin',
+              created_at: u.created_at,
+              updated_at: u.updated_at || u.created_at,
+            };
+            store.profiles.set(p.id, p);
+            return p;
           }
         } catch (err) {
           console.warn('[Repository] getProfileById error:', err);
@@ -1987,13 +2095,33 @@ export const Repository = {
           const { data, error } = await admin.from('profiles').select('*').ilike('email', cleanEmail).limit(1).maybeSingle();
           if (!error && data) {
             const profile = data as any;
-            if (!profile.role || !profile.username) {
+            if (!profile.role || !profile.username || !profile.full_name) {
               const { data: userData } = await admin.auth.admin.getUserById(profile.id);
               profile.role = profile.role || (userData?.user?.user_metadata?.role as UserRole) || 'admin';
               profile.username = profile.username || userData?.user?.user_metadata?.username || cleanEmail.split('@')[0];
+              profile.full_name = profile.full_name || userData?.user?.user_metadata?.full_name || userData?.user?.user_metadata?.name || profile.username;
             }
             store.profiles.set(profile.id, profile as Profile);
             return profile as Profile;
+          }
+
+          // Fallback if profiles row does not exist yet: query Supabase Auth users
+          const { data: usersData } = await admin.auth.admin.listUsers();
+          const matchedUser = usersData?.users?.find(
+            (u) => (u.email || '').toLowerCase() === cleanEmail
+          );
+          if (matchedUser) {
+            const p: Profile = {
+              id: matchedUser.id,
+              email: matchedUser.email || '',
+              username: matchedUser.user_metadata?.username || cleanEmail.split('@')[0],
+              full_name: matchedUser.user_metadata?.full_name || matchedUser.user_metadata?.name || matchedUser.user_metadata?.username || cleanEmail.split('@')[0],
+              role: (matchedUser.user_metadata?.role as UserRole) || 'admin',
+              created_at: matchedUser.created_at,
+              updated_at: matchedUser.updated_at || matchedUser.created_at,
+            };
+            store.profiles.set(p.id, p);
+            return p;
           }
         } catch (err) {
           console.warn('[Repository] getProfileByEmail error:', err);
@@ -2014,32 +2142,36 @@ export const Repository = {
         try {
           const { data, error } = await admin.from('profiles').select('*').ilike('username', cleanUsername).limit(1).maybeSingle();
           if (!error && data) {
-            const profile = data as Profile;
-            store.profiles.set(profile.id, profile);
-            return profile;
+            const profile = data as any;
+            if (!profile.role || !profile.username || !profile.full_name) {
+              const { data: userData } = await admin.auth.admin.getUserById(profile.id);
+              profile.role = profile.role || (userData?.user?.user_metadata?.role as UserRole) || 'admin';
+              profile.username = profile.username || userData?.user?.user_metadata?.username || cleanUsername;
+              profile.full_name = profile.full_name || userData?.user?.user_metadata?.full_name || userData?.user?.user_metadata?.name || profile.username;
+            }
+            store.profiles.set(profile.id, profile as Profile);
+            return profile as Profile;
           }
 
-          // If role/username column does not exist in profiles table yet, query Supabase Auth user metadata
-          if (error && (error.code === '42703' || (error.message || '').toLowerCase().includes('username') || (error.message || '').toLowerCase().includes('schema cache'))) {
-            const { data: usersData } = await admin.auth.admin.listUsers();
-            const matchedUser = usersData?.users?.find(
-              (u) =>
-                (u.user_metadata?.username || '').toLowerCase() === cleanUsername ||
-                (u.email || '').split('@')[0].toLowerCase() === cleanUsername
-            );
-            if (matchedUser) {
-              const p: Profile = {
-                id: matchedUser.id,
-                email: matchedUser.email || '',
-                username: matchedUser.user_metadata?.username || cleanUsername,
-                full_name: matchedUser.user_metadata?.full_name || cleanUsername,
-                role: (matchedUser.user_metadata?.role as UserRole) || 'admin',
-                created_at: matchedUser.created_at,
-                updated_at: matchedUser.updated_at || matchedUser.created_at,
-              };
-              store.profiles.set(p.id, p);
-              return p;
-            }
+          // If role/username column does not exist in profiles table yet or no match, query Supabase Auth user metadata
+          const { data: usersData } = await admin.auth.admin.listUsers();
+          const matchedUser = usersData?.users?.find(
+            (u) =>
+              (u.user_metadata?.username || '').toLowerCase() === cleanUsername ||
+              (u.email || '').split('@')[0].toLowerCase() === cleanUsername
+          );
+          if (matchedUser) {
+            const p: Profile = {
+              id: matchedUser.id,
+              email: matchedUser.email || '',
+              username: matchedUser.user_metadata?.username || cleanUsername,
+              full_name: matchedUser.user_metadata?.full_name || matchedUser.user_metadata?.name || cleanUsername,
+              role: (matchedUser.user_metadata?.role as UserRole) || 'admin',
+              created_at: matchedUser.created_at,
+              updated_at: matchedUser.updated_at || matchedUser.created_at,
+            };
+            store.profiles.set(p.id, p);
+            return p;
           }
         } catch (err) {
           console.warn('[Repository] getProfileByUsername error:', err);
@@ -2154,9 +2286,19 @@ export const Repository = {
   },
 
   verifyLocalPassword(profileId: string, passwordAttempt: string): boolean {
+    if (!passwordAttempt || typeof passwordAttempt !== 'string') return false;
     const stored = store.passwords.get(profileId);
-    if (!stored) return true;
-    return stored === passwordAttempt;
+    if (stored) {
+      return stored === passwordAttempt;
+    }
+    // Seeded accounts default fallback support
+    if (profileId === '00000000-0000-0000-0000-000000000099') {
+      return passwordAttempt === 'superadmin123' || passwordAttempt === 'superadmin';
+    }
+    if (profileId === '00000000-0000-0000-0000-000000000098') {
+      return passwordAttempt === 'admin123' || passwordAttempt === 'admin';
+    }
+    return false;
   },
 
   async hasSuperAdmin(): Promise<boolean> {

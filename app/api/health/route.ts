@@ -23,12 +23,12 @@ export async function GET() {
         storageMode: dbHealth.connected ? 'supabase-postgresql' : 'resilient-in-memory-engine',
         debug: (dbHealth as any).debug,
       },
-      livekit: {
+      audioEngine: {
         configured: liveKitConfig.isConfigured,
         serverUrl: liveKitConfig.url || 'Not configured',
         status: liveKitConfig.isConfigured
-          ? 'LiveKit credentials configured and ready'
-          : 'LiveKit credentials missing or using placeholders (LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET)',
+          ? 'Real-time audio server configured and ready'
+          : 'Audio server credentials missing or using placeholders',
         debug: {
           apiKeyPrefix: liveKitConfig.apiKey ? liveKitConfig.apiKey.slice(0, 4) : 'none',
           apiKeyLength: liveKitConfig.apiKey ? liveKitConfig.apiKey.length : 0,
@@ -38,7 +38,7 @@ export async function GET() {
         },
       },
       features: {
-        realTimeAudio: 'LiveKit/WebRTC Audio Engine',
+        realTimeAudio: 'Real-Time Audio Engine',
         dynamicLanguageRooms: 'Enabled',
         authoritativeSessionBilling: 'Enabled',
         strictSubscriberGrants: 'Enabled',

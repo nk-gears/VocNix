@@ -4,15 +4,32 @@ import { verifySession, SESSION_COOKIE_NAME } from '@/lib/auth/session';
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // 1. Exclude public authentication pages from route guards
-  const publicAuthPaths = [
+  // 1. If an active authenticated session already exists, do not show login again; redirect to appropriate console
+  const authEntryPaths = [
     '/admin/login',
     '/admin/signup',
-    '/admin/forgot-password',
     '/super-admin/login',
+    '/login',
+    '/login/admin',
+    '/login/super-admin',
+  ];
+
+  if (authEntryPaths.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
+    const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
+    const session = token ? await verifySession(token) : null;
+    if (session) {
+      const destination = session.role === 'super_admin' ? '/admin' : '/dashboard';
+      return NextResponse.redirect(new URL(destination, req.url));
+    }
+
+    return NextResponse.next();
+  }
+
+  // 2. Exclude public authentication paths and health check from route guards
+  const publicAuthPaths = [
+    '/admin/forgot-password',
     '/super-admin/forgot-password',
     '/super-admin/setup',
-    '/login',
     '/auth',
     '/api/auth',
     '/api/health',
@@ -22,8 +39,51 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // 2. Super Admin Portal Protection (/admin)
-  // Note: /admin/login, /admin/signup, /admin/forgot-password were exempted above
+  // 3. Super Admin Protected API routes (/api/admin/*)
+  if (pathname.startsWith('/api/admin')) {
+    const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
+    const session = token ? await verifySession(token) : null;
+
+    if (!session) {
+      return NextResponse.json(
+        { success: false, message: 'Unauthorized', error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    if (session.role !== 'super_admin') {
+      return NextResponse.json(
+        { success: false, message: 'Forbidden: Super Admin access required', error: 'Forbidden' },
+        { status: 403 }
+      );
+    }
+
+    return NextResponse.next();
+  }
+
+  // 4. Admin Protected API routes (/api/dashboard/*)
+  if (pathname.startsWith('/api/dashboard')) {
+    const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
+    const session = token ? await verifySession(token) : null;
+
+    if (!session) {
+      return NextResponse.json(
+        { success: false, message: 'Unauthorized', error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    if (session.role !== 'admin' && session.role !== 'super_admin') {
+      return NextResponse.json(
+        { success: false, message: 'Forbidden: Admin access required', error: 'Forbidden' },
+        { status: 403 }
+      );
+    }
+
+    return NextResponse.next();
+  }
+
+  // 5. Super Admin Portal UI Protection (/admin)
   if (pathname === '/admin' || pathname.startsWith('/admin/')) {
     const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
     const session = token ? await verifySession(token) : null;
@@ -33,7 +93,7 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
-    // Role-based access control: Admin is strictly prohibited from accessing Super Admin
+    // Role-based access control: Admin is strictly prohibited from accessing Super Admin portal
     if (session.role !== 'super_admin') {
       const redirectUrl = new URL('/dashboard?error=access_denied', req.url);
       return NextResponse.redirect(redirectUrl);
@@ -42,7 +102,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // 3. Organization Admin Dashboard Protection (/dashboard)
+  // 6. Organization Admin Dashboard UI Protection (/dashboard)
   if (pathname === '/dashboard' || pathname.startsWith('/dashboard/')) {
     const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
     const session = token ? await verifySession(token) : null;
@@ -55,24 +115,17 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // 4. Super Admin Protected API routes (/api/admin)
-  if (pathname.startsWith('/api/admin')) {
-    const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
-    const session = token ? await verifySession(token) : null;
-
-    if (!session || session.role !== 'super_admin') {
-      return NextResponse.json(
-        { success: false, error: 'Forbidden: Super Admin access required' },
-        { status: 403 }
-      );
-    }
-
-    return NextResponse.next();
-  }
-
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/dashboard/:path*', '/api/admin/:path*'],
+  matcher: [
+    '/admin/:path*',
+    '/super-admin/:path*',
+    '/dashboard/:path*',
+    '/login',
+    '/login/:path*',
+    '/api/admin/:path*',
+    '/api/dashboard/:path*',
+  ],
 };

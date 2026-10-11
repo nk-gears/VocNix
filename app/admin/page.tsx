@@ -20,6 +20,10 @@ import {
   TrendingUp,
   FileText,
   UserCheck,
+  Plus,
+  Building,
+  X,
+  AlertCircle,
 } from 'lucide-react';
 
 export default function SuperAdminPage() {
@@ -29,6 +33,66 @@ export default function SuperAdminPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [updatingOrgId, setUpdatingOrgId] = useState<string | null>(null);
+
+  // Add Organization Modal State
+  const [isAddOrgModalOpen, setIsAddOrgModalOpen] = useState(false);
+  const [newOrgName, setNewOrgName] = useState('');
+  const [newOrgSlug, setNewOrgSlug] = useState('');
+  const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
+  const [newOrgPlanId, setNewOrgPlanId] = useState('');
+  const [newOrgStatus, setNewOrgStatus] = useState<'active' | 'suspended'>('active');
+  const [creatingOrg, setCreatingOrg] = useState(false);
+  const [createOrgError, setCreateOrgError] = useState<string | null>(null);
+  const [createSuccessMsg, setCreateSuccessMsg] = useState<string | null>(null);
+
+  const handleCreateOrg = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newOrgName.trim()) {
+      setCreateOrgError('Please enter an organization name.');
+      return;
+    }
+
+    setCreatingOrg(true);
+    setCreateOrgError(null);
+
+    try {
+      const res = await fetch('/api/admin/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newOrgName.trim(),
+          slug: newOrgSlug.trim() || undefined,
+          plan_id: newOrgPlanId || plans[0]?.id || 'plan-starter',
+          status: newOrgStatus,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setCreateOrgError(data.error || 'Failed to create organization');
+        setCreatingOrg(false);
+        return;
+      }
+
+      setCreateSuccessMsg(`Organization "${data.organization?.name || newOrgName}" created successfully!`);
+      setTimeout(() => setCreateSuccessMsg(null), 4000);
+
+      // Reset form & close modal
+      setNewOrgName('');
+      setNewOrgSlug('');
+      setSlugManuallyEdited(false);
+      setNewOrgPlanId('');
+      setNewOrgStatus('active');
+      setIsAddOrgModalOpen(false);
+      setCreatingOrg(false);
+
+      // Refresh organizations
+      await fetchAdminData();
+    } catch (err: any) {
+      setCreateOrgError(err.message || 'Network error creating organization');
+      setCreatingOrg(false);
+    }
+  };
 
   const fetchAdminData = async () => {
     try {
@@ -271,21 +335,49 @@ export default function SuperAdminPage() {
 
       {/* Organizations Directory & Governance Table */}
       <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 space-y-6">
+        {createSuccessMsg && (
+          <div className="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-between text-emerald-300 text-xs">
+            <div className="flex items-center space-x-2">
+              <CheckCircle className="w-4 h-4 text-emerald-400" />
+              <span>{createSuccessMsg}</span>
+            </div>
+            <button
+              onClick={() => setCreateSuccessMsg(null)}
+              className="text-emerald-400 hover:text-emerald-200"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h2 className="text-xl font-bold text-white tracking-tight">Manage All Organizations</h2>
             <p className="text-xs text-slate-400">Control subscription tiers, suspension, trial periods, and usage limits</p>
           </div>
 
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-500" />
-            <input
-              type="text"
-              placeholder="Search organizations..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500 w-64"
-            />
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-500" />
+              <input
+                type="text"
+                placeholder="Search organizations..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500 w-52 sm:w-64"
+              />
+            </div>
+
+            <button
+              onClick={() => {
+                setCreateOrgError(null);
+                setIsAddOrgModalOpen(true);
+              }}
+              className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 active:scale-[0.98] text-slate-950 font-bold text-xs rounded-xl flex items-center space-x-1.5 transition shadow-lg shadow-amber-500/20 whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4 text-slate-950" />
+              <span>Add Organization</span>
+            </button>
           </div>
         </div>
 
@@ -338,7 +430,7 @@ export default function SuperAdminPage() {
                       >
                         {plans.map((p) => (
                           <option key={p.id} value={p.id}>
-                            {p.name} ({p.price_label || (p.price_inr !== undefined ? `₹${p.price_inr.toLocaleString('en-IN')}` : `₹${p.price_cents / 100}`)})
+                            {p.name}
                           </option>
                         ))}
                       </select>
@@ -399,10 +491,171 @@ export default function SuperAdminPage() {
                   </tr>
                 );
               })}
+              {filteredOrgs.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="text-center py-12 text-slate-500 space-y-2">
+                    <p className="text-sm">No organizations found{searchQuery ? ` matching "${searchQuery}"` : ''}.</p>
+                    <button
+                      onClick={() => {
+                        setCreateOrgError(null);
+                        setIsAddOrgModalOpen(true);
+                      }}
+                      className="inline-flex items-center space-x-1.5 text-xs text-amber-400 hover:text-amber-300 font-semibold underline underline-offset-4"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add New Organization</span>
+                    </button>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Add Organization Modal */}
+      {isAddOrgModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl relative">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                  <Building className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white tracking-tight">Add New Organization</h3>
+                  <p className="text-xs text-slate-400">Create a new tenant organization with custom subscription pass and slug</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddOrgModalOpen(false);
+                  setCreateOrgError(null);
+                }}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {createOrgError && (
+              <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 flex items-start space-x-2.5 text-red-300 text-xs">
+                <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <strong className="font-semibold text-red-200">Error: </strong>
+                  <span>{createOrgError}</span>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateOrg} className="space-y-4 text-xs">
+              <div className="space-y-1.5">
+                <label className="font-semibold text-slate-300 flex items-center justify-between">
+                  <span>Organization Name *</span>
+                  <span className="text-slate-500 font-normal">e.g. Acme Worldwide</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Global Tech Summit"
+                  value={newOrgName}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setNewOrgName(val);
+                    if (!slugManuallyEdited) {
+                      setNewOrgSlug(
+                        val.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+                      );
+                    }
+                  }}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500 transition"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-semibold text-slate-300 flex items-center justify-between">
+                  <span>Organization Slug / Subdomain</span>
+                  <span className="text-slate-500 font-normal">Tenant routing path</span>
+                </label>
+                <div className="relative flex items-center">
+                  <span className="absolute left-3.5 text-slate-500 font-mono text-xs">/</span>
+                  <input
+                    type="text"
+                    placeholder="global-tech-summit"
+                    value={newOrgSlug}
+                    onChange={(e) => {
+                      setSlugManuallyEdited(true);
+                      setNewOrgSlug(
+                        e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')
+                      );
+                    }}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-7 pr-3.5 py-2.5 text-xs font-mono text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500 transition"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-semibold text-slate-300">Initial Subscription Pass / Plan</label>
+                <select
+                  value={newOrgPlanId}
+                  onChange={(e) => setNewOrgPlanId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-semibold"
+                >
+                  {plans.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.duration_label || `${p.monthly_minute_quota} mins`})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-semibold text-slate-300">Account Status</label>
+                <select
+                  value={newOrgStatus}
+                  onChange={(e) => setNewOrgStatus(e.target.value as 'active' | 'suspended')}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-semibold"
+                >
+                  <option value="active">Active (Operational & Allowed to Broadcast)</option>
+                  <option value="suspended">Suspended (Blocked from Broadcasting)</option>
+                </select>
+              </div>
+
+              <div className="flex items-center justify-end space-x-3 pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAddOrgModalOpen(false);
+                    setCreateOrgError(null);
+                  }}
+                  disabled={creatingOrg}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingOrg}
+                  className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 active:scale-[0.98] text-slate-950 text-xs font-bold rounded-xl transition shadow-lg shadow-amber-500/20 flex items-center space-x-1.5 disabled:opacity-60"
+                >
+                  {creatingOrg ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-slate-950/30 border-t-slate-950 rounded-full animate-spin" />
+                      <span>Creating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-3.5 h-3.5 text-slate-950" />
+                      <span>Create Organization</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

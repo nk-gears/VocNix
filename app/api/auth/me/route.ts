@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionFromRequest } from '@/lib/auth/session';
+import { getSessionFromRequest, getUserDisplayName } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +14,10 @@ export async function GET(req: NextRequest) {
     user: {
       userId: session.userId,
       email: session.email,
+      username: session.username || session.email.split('@')[0],
+      full_name: session.full_name || session.name,
       name: session.name,
+      displayName: getUserDisplayName(session),
       avatar: session.avatar,
       role: session.role,
     },

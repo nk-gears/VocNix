@@ -133,11 +133,11 @@ export default function SuperAdminForgotPasswordPage() {
 
         <div className="pt-4 border-t border-slate-800 text-center">
           <Link
-            href="/super-admin/login"
+            href="/login"
             className="inline-flex items-center space-x-1.5 text-xs text-slate-400 hover:text-white transition"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Return to Super Admin Login</span>
+            <span>Return to Login</span>
           </Link>
         </div>
       </div>

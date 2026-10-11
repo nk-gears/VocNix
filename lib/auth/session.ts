@@ -7,11 +7,30 @@ export interface UserSession {
   userId: string;
   email: string;
   username?: string;
+  full_name?: string;
   name: string;
   avatar?: string;
   role: UserRole;
   createdAt: number;
   expiresAt: number;
+}
+
+/**
+ * Resolves user display name adhering strictly to priority:
+ * username -> full_name -> name -> email -> 'User'
+ */
+export function getUserDisplayName(user?: {
+  username?: string | null;
+  full_name?: string | null;
+  name?: string | null;
+  email?: string | null;
+} | null): string {
+  if (!user) return 'User';
+  if (user.username && user.username.trim()) return user.username.trim();
+  if (user.full_name && user.full_name.trim()) return user.full_name.trim();
+  if (user.name && user.name.trim()) return user.name.trim();
+  if (user.email && user.email.trim()) return user.email.trim();
+  return 'User';
 }
 
 export const SESSION_COOKIE_NAME = 'vocnix_session';

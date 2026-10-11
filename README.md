@@ -1,7 +1,7 @@
 # VocNix — Production Real-Time Audio Translation Platform
 
 [![Next.js](https://img.shields.io/badge/Next.js-14.2.15-black?style=flat&logo=next.js)](https://nextjs.org/)
-[![LiveKit](https://img.shields.io/badge/LiveKit-WebRTC%20SFU-00D26A?style=flat)](https://livekit.io/)
+[![WebRTC](https://img.shields.io/badge/WebRTC-Audio%20Engine-00D26A?style=flat)](https://webrtc.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue?style=flat&logo=typescript)](https://www.typescriptlang.org/)
 [![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3.4-38B2AC?style=flat&logo=tailwind-css)](https://tailwindcss.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](bin/LICENSE)
@@ -31,7 +31,7 @@
   (canPublish: true)                          | (canPublish: false)
            v                                  |
     +------------------------------------------------+
-    |               LIVEKIT SFU ENGINE               |
+    |             REAL-TIME AUDIO ENGINE             |
     |          Dynamic WebRTC Language Room          |
     |          (e.g., evt_ab12_lang_ta)             |
     +------------------------------------------------+
@@ -105,7 +105,7 @@
 ├── components/
 │   └── QRCodeModal.tsx              # Audience QR code generator & PNG download
 ├── lib/
-│   ├── audio/AudioService.ts        # Unified LiveKit WebRTC client & VU meter engine
+│   ├── audio/AudioService.ts        # Unified WebRTC audio client & VU meter engine
 │   ├── db/
 │   │   ├── repository.ts            # Database repository & multi-tenant logic
 │   │   └── supabase.ts              # Supabase PostgreSQL client & health checks
@@ -144,13 +144,11 @@ Configure your credentials:
 # Application URL
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 
-# LiveKit WebRTC Configuration
-# For local dev: ws://127.0.0.1:7880
-# For LiveKit Cloud: wss://<your-project>.livekit.cloud
-LIVEKIT_URL=your-livekit-url
-LIVEKIT_API_KEY=your-livekit-api-key
-LIVEKIT_API_SECRET=your-livekit-api-secret
-NEXT_PUBLIC_LIVEKIT_URL=your-livekit-url
+# Real-Time Audio Engine Configuration
+LIVEKIT_URL=your-audio-server-url
+LIVEKIT_API_KEY=your-api-key
+LIVEKIT_API_SECRET=your-api-secret
+NEXT_PUBLIC_LIVEKIT_URL=your-audio-server-url
 
 # Supabase Database Configuration
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
@@ -158,13 +156,11 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
-### 3. Run LiveKit Server (Local WebRTC SFU)
+### 3. Run Audio Server
 
-If testing locally on Windows:
 ```bash
 .\bin\livekit-server.exe --dev
 ```
-*(Or use [LiveKit Cloud](https://cloud.livekit.io) which offers a free tier with zero installation required).*
 
 ### 4. Run Next.js Application
 

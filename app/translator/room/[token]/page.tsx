@@ -227,7 +227,7 @@ export default function TranslatorRoomPage() {
   // ==========================================================
   const handleStartBroadcast = async () => {
     if (!wsUrl || !livekitToken || !audioServiceRef.current) {
-      setError('LiveKit connection parameters not ready.');
+      setError('Audio connection parameters not ready.');
       return;
     }
 
@@ -239,7 +239,7 @@ export default function TranslatorRoomPage() {
       }
       if (!resolvedWsUrl || resolvedWsUrl.includes('•') || (!resolvedWsUrl.startsWith('ws://') && !resolvedWsUrl.startsWith('wss://'))) {
         throw new Error(
-          `Invalid LiveKit URL: "${resolvedWsUrl}". Make sure you copy the real WebSocket URL (e.g. wss://<project>.livekit.cloud) in your Vercel Environment Variables, not masked bullet points.`
+          `Invalid audio connection URL: "${resolvedWsUrl}". Please verify the WebSocket connection URL in your environment settings.`
         );
       }
       await audioServiceRef.current.connectTranslator({
@@ -256,7 +256,7 @@ export default function TranslatorRoomPage() {
         }).catch(() => {});
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to access microphone or connect to LiveKit');
+      setError(err.message || 'Failed to access microphone or connect to audio server');
     }
   };
 
@@ -426,7 +426,7 @@ export default function TranslatorRoomPage() {
               <strong className="text-slate-200">{roomData?.languageName}</strong>
             </span>
             <span>•</span>
-            <span className="font-mono text-xs text-slate-500">Room: {roomData?.livekitRoomName}</span>
+            <span className="font-mono text-xs text-slate-500 dark:text-slate-400">Session ID: {roomData?.livekitRoomName}</span>
           </div>
         </div>
 
@@ -496,7 +496,7 @@ export default function TranslatorRoomPage() {
             <Radio className="w-4 h-4 text-purple-400" />
           </div>
           <div className="text-xl font-bold text-white capitalize">{connectionStatus}</div>
-          <div className="text-xs text-slate-500">LiveKit WebRTC Connection</div>
+          <div className="text-xs text-slate-500 dark:text-slate-400">Real-Time Audio Connection</div>
         </div>
       </div>
 
