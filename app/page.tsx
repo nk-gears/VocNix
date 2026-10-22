@@ -6,7 +6,6 @@ import {
   ShieldCheck,
   Zap,
   ArrowRight,
-  Activity,
   CheckCircle2,
   Users,
   HelpCircle,
@@ -34,27 +33,19 @@ export default function HomePage() {
 
         <div className="flex flex-wrap items-center justify-center gap-4 pt-4">
           <Link
-            href="/admin/login"
+            href="#features"
             className="px-6 py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-semibold flex items-center space-x-2 transition shadow-lg shadow-emerald-500/20"
           >
-            <Activity className="w-5 h-5" />
-            <span>Admin Login</span>
+            <Sparkles className="w-5 h-5" />
+            <span>Explore Features</span>
             <ArrowRight className="w-4 h-4 ml-1" />
           </Link>
           <Link
-            href="/super-admin/login"
-            className="px-6 py-3.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-800 font-semibold flex items-center space-x-2 transition shadow-sm"
-          >
-            <ShieldCheck className="w-5 h-5 text-amber-500" />
-            <span>Super Admin Login</span>
-            <ArrowRight className="w-4 h-4 ml-1" />
-          </Link>
-          <Link
-            href="#features"
+            href="#about"
             className="px-6 py-3.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold flex items-center space-x-2 transition border border-slate-300 dark:border-slate-700 shadow-sm"
           >
-            <Sparkles className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />
-            <span>Explore Features</span>
+            <Globe className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />
+            <span>About VocNix</span>
           </Link>
         </div>
       </section>
@@ -246,13 +237,13 @@ export default function HomePage() {
                 Test translator headsets, calibrate input audio gain, and simulate multi-language distribution ahead of your event.
               </p>
             </div>
-            <Link
-              href="/login"
+            <a
+              href="mailto:support@vocnix.com?subject=Soundcheck%20Assistance"
               className="inline-flex items-center space-x-2 text-sm font-semibold text-emerald-600 dark:text-emerald-400 hover:underline pt-2"
             >
-              <span>Access Translator Rooms</span>
+              <span>Request Soundcheck</span>
               <ArrowRight className="w-4 h-4" />
-            </Link>
+            </a>
           </div>
 
           <div className="bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-4 shadow-sm flex flex-col justify-between">
@@ -260,28 +251,18 @@ export default function HomePage() {
               <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-600 dark:text-blue-400">
                 <Radio className="w-5 h-5" />
               </div>
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Admin Management</h3>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Event Operations</h3>
               <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-                Configure your event rooms, manage languages, view live listener counts, and review broadcast statistics.
+                Dedicated operational guidance for live event production, translator onboarding, and multi-channel configuration.
               </p>
             </div>
-            <div className="flex items-center space-x-4 pt-2">
-              <Link
-                href="/admin/login"
-                className="inline-flex items-center space-x-1.5 text-sm font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
-              >
-                <span>Admin Login</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-              <span className="text-slate-300 dark:text-slate-700">•</span>
-              <Link
-                href="/super-admin/login"
-                className="inline-flex items-center space-x-1.5 text-sm font-semibold text-amber-600 dark:text-amber-400 hover:underline"
-              >
-                <span>Super Admin</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
+            <a
+              href="mailto:support@vocnix.com?subject=Event%20Operations%20Assistance"
+              className="inline-flex items-center space-x-2 text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline pt-2"
+            >
+              <span>Contact Operations</span>
+              <ArrowRight className="w-4 h-4" />
+            </a>
           </div>
         </div>
       </section>
