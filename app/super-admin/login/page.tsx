@@ -203,30 +203,27 @@ export default function SuperAdminLoginPage() {
           </button>
         </form>
 
-        {/* Security Notice & Alternate Portals */}
+        {/* Alternate Portals & Back Navigation */}
         <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3 text-center text-xs">
-          <p className="text-slate-600 dark:text-slate-400">
+          <div>
+            <Link
+              href="/login"
+              className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:underline font-medium transition inline-flex items-center space-x-1"
+            >
+              <span>&larr; Back to Login Selection</span>
+            </Link>
+          </div>
+
+          <p className="text-slate-500 dark:text-slate-400">
             Need Organization Admin access?{' '}
             <Link
               href="/admin/login"
-              className="text-emerald-600 dark:text-emerald-400 hover:underline font-semibold transition"
+              className="text-emerald-600 dark:text-emerald-400 hover:underline font-semibold transition inline-flex items-center space-x-1"
             >
-              Sign in at Admin Portal
+              <Activity className="w-3.5 h-3.5 text-emerald-500" />
+              <span>Admin Login Portal &rarr;</span>
             </Link>
           </p>
-
-          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
-            <span>
-              Super Admin accounts cannot be created via public registration. Need initial platform setup?{' '}
-            </span>
-            <Link
-              href="/super-admin/setup"
-              className="text-amber-600 dark:text-amber-400 hover:underline font-medium inline-flex items-center space-x-1"
-            >
-              <KeyRound className="w-3 h-3 ml-0.5 inline" />
-              <span>Initial Setup</span>
-            </Link>
-          </div>
         </div>
       </div>
     </div>

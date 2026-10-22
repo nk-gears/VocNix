@@ -1,17 +1,34 @@
 'use client';
 
 import Link from 'next/link';
-import { Activity, Shield, ArrowRight, Lock } from 'lucide-react';
+import { Activity, Shield, ArrowRight, Lock, Radio } from 'lucide-react';
 
 export default function CommonLoginPage() {
   return (
     <div className="min-h-[85vh] flex items-center justify-center px-4 sm:px-6 lg:px-8 py-12">
       <div className="max-w-2xl w-full space-y-8">
+        {/* Project Branding & Header */}
         <div className="text-center space-y-3">
-          <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold">
-            <Lock className="w-3.5 h-3.5" />
-            <span>AUTHENTICATION PORTAL</span>
+          <div className="flex items-center justify-center space-x-3 mb-2">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-500 dark:text-emerald-400 shadow-inner">
+              <Radio className="w-6 h-6 animate-pulse" />
+            </div>
+            <div className="text-left">
+              <div className="flex items-center space-x-2">
+                <span className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">VocNix</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 uppercase tracking-wider">
+                  Real-Time Audio
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Platform Authentication</p>
+            </div>
           </div>
+
+          <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold">
+            <Lock className="w-3.5 h-3.5 text-emerald-500" />
+            <span>ROLE-BASED AUTHENTICATION</span>
+          </div>
+
           <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
             Select Your Login Portal
           </h1>
@@ -20,7 +37,8 @@ export default function CommonLoginPage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+        {/* Two Main Login Buttons / Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
           {/* Admin Card */}
           <Link
             href="/admin/login"
@@ -32,20 +50,22 @@ export default function CommonLoginPage() {
               </div>
               <div className="space-y-1.5">
                 <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 uppercase tracking-wider">
-                  Tenant Portal
+                  Tenant Organization
                 </span>
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition">
                   Admin Login
                 </h2>
                 <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                  Sign in to manage event language channels, translators, listener statistics, and live sessions.
+                  Sign in to manage event language channels, assign translators, monitor listener statistics, and broadcast live sessions.
                 </p>
               </div>
             </div>
 
-            <div className="pt-6 flex items-center space-x-2 text-sm font-semibold text-emerald-600 dark:text-emerald-400 group-hover:translate-x-1 transition-transform">
-              <span>Go to Admin Login</span>
-              <ArrowRight className="w-4 h-4" />
+            <div className="pt-6">
+              <div className="w-full py-3 px-4 rounded-xl bg-emerald-500 group-hover:bg-emerald-600 text-white font-semibold text-sm flex items-center justify-center space-x-2 transition shadow-md shadow-emerald-500/20">
+                <span>Admin Login</span>
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </div>
             </div>
           </Link>
 
@@ -66,15 +86,27 @@ export default function CommonLoginPage() {
                   Super Admin Login
                 </h2>
                 <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                  Restricted portal for platform governance, all organizations, subscription plans, and platform revenue.
+                  Restricted portal for platform governance, multi-tenant organizations, subscription plans, and platform revenue.
                 </p>
               </div>
             </div>
 
-            <div className="pt-6 flex items-center space-x-2 text-sm font-semibold text-amber-600 dark:text-amber-400 group-hover:translate-x-1 transition-transform">
-              <span>Go to Super Admin Login</span>
-              <ArrowRight className="w-4 h-4" />
+            <div className="pt-6">
+              <div className="w-full py-3 px-4 rounded-xl bg-amber-500 group-hover:bg-amber-600 text-slate-950 font-bold text-sm flex items-center justify-center space-x-2 transition shadow-md shadow-amber-500/20">
+                <span>Super Admin Login</span>
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </div>
             </div>
+          </Link>
+        </div>
+
+        {/* Footer Navigation */}
+        <div className="text-center pt-2">
+          <Link
+            href="/"
+            className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition"
+          >
+            &larr; Return to VocNix Home
           </Link>
         </div>
       </div>

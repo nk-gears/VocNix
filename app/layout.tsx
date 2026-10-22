@@ -125,25 +125,15 @@ export default async function RootLayout({
                 </>
               )}
 
-              {/* Unauthenticated: Separate Admin and Super Admin login links */}
+              {/* Unauthenticated: Single Common Login Link */}
               {!session && (
-                <div className="flex items-center space-x-2">
-                  <Link
-                    href="/admin/login"
-                    className="text-slate-700 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 transition flex items-center space-x-1.5 font-medium shadow-sm text-xs sm:text-sm"
-                  >
-                    <Activity className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
-                    <span>Admin</span>
-                  </Link>
-
-                  <Link
-                    href="/super-admin/login"
-                    className="text-amber-700 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300 px-3 py-1.5 rounded-lg border border-amber-200 dark:border-amber-900/60 bg-amber-500/10 hover:bg-amber-500/20 transition flex items-center space-x-1.5 font-medium shadow-sm text-xs sm:text-sm"
-                  >
-                    <Shield className="w-4 h-4 text-amber-500 dark:text-amber-400" />
-                    <span>Super Admin</span>
-                  </Link>
-                </div>
+                <Link
+                  href="/login"
+                  className="px-4 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-xs sm:text-sm flex items-center space-x-1.5 transition shadow-sm shadow-emerald-500/20"
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>Login</span>
+                </Link>
               )}
 
               {/* Theme Switcher Toggle */}

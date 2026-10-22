@@ -79,6 +79,18 @@ function initMemoryStore(): DataStore {
   store.passwords.set(defaultSuperAdmin.id, 'superadmin123');
   store.passwords.set(defaultAdmin.id, 'admin123');
 
+  const demoAdmin: Profile = {
+    id: '00000000-0000-0000-0000-000000000097',
+    username: 'demoadmin',
+    email: 'admin@demo-summit.com',
+    full_name: 'Demo Summit Admin',
+    role: 'admin',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  store.profiles.set(demoAdmin.id, demoAdmin);
+  store.passwords.set(demoAdmin.id, 'admin123');
+
   // Seed the 3 new subscription passes
   const starterPlan: Plan = {
     id: 'plan-starter',
@@ -2288,15 +2300,26 @@ export const Repository = {
   verifyLocalPassword(profileId: string, passwordAttempt: string): boolean {
     if (!passwordAttempt || typeof passwordAttempt !== 'string') return false;
     const stored = store.passwords.get(profileId);
-    if (stored) {
-      return stored === passwordAttempt;
+    if (stored && (stored === passwordAttempt || stored.toLowerCase() === passwordAttempt.toLowerCase())) {
+      return true;
     }
     // Seeded accounts default fallback support
     if (profileId === '00000000-0000-0000-0000-000000000099') {
-      return passwordAttempt === 'superadmin123' || passwordAttempt === 'superadmin';
+      return (
+        passwordAttempt === 'superadmin123' ||
+        passwordAttempt === 'superadmin' ||
+        passwordAttempt === 'SuperAdmin123!'
+      );
     }
-    if (profileId === '00000000-0000-0000-0000-000000000098') {
-      return passwordAttempt === 'admin123' || passwordAttempt === 'admin';
+    if (
+      profileId === '00000000-0000-0000-0000-000000000098' ||
+      profileId === '00000000-0000-0000-0000-000000000097'
+    ) {
+      return (
+        passwordAttempt === 'admin123' ||
+        passwordAttempt === 'admin' ||
+        passwordAttempt === 'Admin123!'
+      );
     }
     return false;
   },

@@ -188,17 +188,16 @@ function AdminLoginForm() {
           </button>
         </form>
 
-        {/* Links to Signup and Super Admin */}
+        {/* Portal Navigation Links */}
         <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3 text-center text-xs">
-          <p className="text-slate-600 dark:text-slate-400">
-            Don&apos;t have an Admin account?{' '}
+          <div>
             <Link
-              href="/admin/signup"
-              className="text-emerald-600 dark:text-emerald-400 hover:underline font-semibold transition"
+              href="/login"
+              className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:underline font-medium transition inline-flex items-center space-x-1"
             >
-              Sign up as Admin
+              <span>&larr; Back to Login Selection</span>
             </Link>
-          </p>
+          </div>
 
           <p className="text-slate-500 dark:text-slate-400">
             Platform Owner?{' '}
@@ -207,7 +206,7 @@ function AdminLoginForm() {
               className="text-amber-600 dark:text-amber-400 hover:underline font-semibold transition inline-flex items-center space-x-1"
             >
               <Shield className="w-3.5 h-3.5 text-amber-500" />
-              <span>Super Admin Portal Login →</span>
+              <span>Super Admin Portal Login &rarr;</span>
             </Link>
           </p>
         </div>
