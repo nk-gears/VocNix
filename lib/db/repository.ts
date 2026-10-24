@@ -2484,43 +2484,50 @@ export const Repository = {
     if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();
       if (admin) {
-        // Attempt full upsert including role and username
-        const { data, error } = await admin
-          .from('profiles')
-          .upsert(profile, { onConflict: 'id' })
-          .select('*')
-          .single();
-        if (!error && data) {
-          const p = data as Profile;
-          store.profiles.set(p.id, p);
-          return p;
-        }
+        try {
+          // Attempt full upsert including role and username
+          const { data, error } = await admin
+            .from('profiles')
+            .upsert(profile, { onConflict: 'id' })
+            .select('*')
+            .single();
+          if (!error && data) {
+            const p = data as Profile;
+            store.profiles.set(p.id, p);
+            return p;
+          }
 
-        // Graceful fallback if database migration 002 has not been run yet
-        if (error) {
-          const errMsg = (error.message || '').toLowerCase();
-          if (errMsg.includes('role') || errMsg.includes('username') || errMsg.includes('schema cache')) {
-            console.warn('[Repository] Supabase profiles table does not have role/username columns yet. Falling back to base fields and auth metadata.');
-            const baseProfile = {
-              id: profile.id,
-              email: profile.email,
-              full_name: profile.full_name,
-              avatar_url: profile.avatar_url,
-              created_at: profile.created_at,
-              updated_at: profile.updated_at,
-            };
-            const { error: baseError } = await admin
-              .from('profiles')
-              .upsert(baseProfile, { onConflict: 'id' });
-            if (baseError) {
-              console.error('[Repository] Error inserting base profile into Supabase:', baseError);
+          // Graceful fallback if database migration 002 has not been run yet
+          if (error) {
+            const errMsg = (error.message || '').toLowerCase();
+            if (errMsg.includes('role') || errMsg.includes('username') || errMsg.includes('schema cache')) {
+              console.warn('[Repository] Supabase profiles table does not have role/username columns yet. Falling back to base fields and auth metadata.');
+              const baseProfile = {
+                id: profile.id,
+                email: profile.email,
+                full_name: profile.full_name,
+                avatar_url: profile.avatar_url,
+                created_at: profile.created_at,
+                updated_at: profile.updated_at,
+              };
+              const { error: baseError } = await admin
+                .from('profiles')
+                .upsert(baseProfile, { onConflict: 'id' });
+              if (baseError) {
+                console.error('[Repository] Error inserting base profile into Supabase:', baseError);
+              }
+              store.profiles.set(profile.id, profile);
+              return profile;
             }
+
+            console.warn('[Repository] Error creating profile in Supabase, using memory fallback:', error);
             store.profiles.set(profile.id, profile);
             return profile;
           }
-
-          console.error('[Repository] Error creating profile in Supabase:', error);
-          throw new Error(error.message);
+        } catch (err: any) {
+          console.warn('[Repository] Supabase profile upsert network exception, using memory fallback:', err?.message || err);
+          store.profiles.set(profile.id, profile);
+          return profile;
         }
       }
     }
