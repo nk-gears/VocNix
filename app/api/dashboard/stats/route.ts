@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Repository } from '@/lib/db/repository';
+import { resolveRequestOrganization } from '@/lib/auth/organization-context';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -12,7 +13,7 @@ const NO_CACHE_HEADERS = {
 
 export async function GET(req: NextRequest) {
   try {
-    const org = await Repository.getDefaultOrganization();
+    const org = await resolveRequestOrganization(req);
     const stats = await Repository.getDashboardStats(org.id);
     const logs = await Repository.getActivityLogs(org.id, 10);
 
@@ -23,6 +24,9 @@ export async function GET(req: NextRequest) {
           id: org.id,
           name: org.name,
           slug: org.slug,
+          status: org.status,
+          admin_name: org.admin_name,
+          admin_email: org.admin_email,
         },
         stats,
         activityLogs: logs,

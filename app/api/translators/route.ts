@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Repository } from '@/lib/db/repository';
+import { resolveRequestOrganization } from '@/lib/auth/organization-context';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const org = await Repository.getDefaultOrganization();
+    const org = await resolveRequestOrganization(req);
     const translators = await Repository.getTranslators(org.id);
     return NextResponse.json({ success: true, translators });
   } catch (err: any) {
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Full name and email are required' }, { status: 400 });
     }
 
-    const org = await Repository.getDefaultOrganization();
+    const org = await resolveRequestOrganization(req);
     const translator = await Repository.createTranslator({
       organization_id: org.id,
       full_name,

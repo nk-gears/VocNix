@@ -2,7 +2,7 @@ export type EventStatus = 'draft' | 'scheduled' | 'live' | 'ended' | 'expired';
 export type RoomStatus = 'idle' | 'live' | 'paused' | 'ended';
 export type SessionStatus = 'live' | 'paused' | 'stopped';
 export type MemberRole = 'owner' | 'admin' | 'translator' | 'viewer';
-export type OrgStatus = 'active' | 'suspended' | 'delinquent';
+export type OrgStatus = 'active' | 'inactive' | 'suspended' | 'delinquent';
 export type TicketPriority = 'low' | 'normal' | 'high' | 'urgent';
 export type TicketStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
 
@@ -15,6 +15,9 @@ export interface Profile {
   full_name?: string;
   avatar_url?: string;
   role: UserRole;
+  organization_id?: string;
+  phone?: string;
+  status?: 'active' | 'inactive' | 'suspended' | 'disabled';
   created_at: string;
   updated_at: string;
 }
@@ -43,6 +46,10 @@ export interface Organization {
   slug: string;
   plan_id?: string;
   status: OrgStatus;
+  admin_name?: string;
+  admin_email?: string;
+  contact_number?: string;
+  admin_user_id?: string;
   created_at: string;
   updated_at: string;
 }

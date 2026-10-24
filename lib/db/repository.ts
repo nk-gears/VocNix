@@ -13,6 +13,7 @@ import {
   RoomStatus,
   Profile,
   UserRole,
+  OrgStatus,
 } from '@/lib/types/database';
 import { getSupabaseAdmin, isSupabaseConfigured } from './supabase';
 import { randomBytes, randomUUID } from 'crypto';
@@ -71,6 +72,8 @@ function initMemoryStore(): DataStore {
     email: 'admin@vocnix.com',
     full_name: 'Platform Admin',
     role: 'admin',
+    organization_id: '00000000-0000-0000-0000-000000000001',
+    phone: '+1 (555) 234-5678',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -85,6 +88,8 @@ function initMemoryStore(): DataStore {
     email: 'admin@demo-summit.com',
     full_name: 'Demo Summit Admin',
     role: 'admin',
+    organization_id: '00000000-0000-0000-0000-000000000002',
+    phone: '+1 (555) 987-6543',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -154,10 +159,45 @@ function initMemoryStore(): DataStore {
     slug: 'acme-global',
     plan_id: singleEventPlan.id,
     status: 'active',
+    admin_name: 'Platform Admin',
+    admin_email: 'admin@vocnix.com',
+    contact_number: '+1 (555) 234-5678',
+    admin_user_id: defaultAdmin.id,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
   store.organizations.set(defaultOrg.id, defaultOrg);
+
+  // Second Seeded Organization (Summit Global Tech) for Multi-Tenant Testing
+  const demoOrg: Organization = {
+    id: '00000000-0000-0000-0000-000000000002',
+    name: 'Summit Global Tech',
+    slug: 'summit-tech',
+    plan_id: fullDayPlan.id,
+    status: 'active',
+    admin_name: 'Demo Summit Admin',
+    admin_email: 'admin@demo-summit.com',
+    contact_number: '+1 (555) 987-6543',
+    admin_user_id: demoAdmin.id,
+    created_at: new Date(Date.now() - 5 * 86400000).toISOString(),
+    updated_at: new Date(Date.now() - 5 * 86400000).toISOString(),
+  };
+  store.organizations.set(demoOrg.id, demoOrg);
+
+  // Seeded sample event for Summit Global Tech
+  const demoEvent: Event = {
+    id: 'ev-demo-summit-01',
+    organization_id: demoOrg.id,
+    title: 'Summit Global Tech Keynote 2026',
+    description: 'Cross-border technology conference with live multi-language audio streaming',
+    scheduled_start: new Date(Date.now() + 2 * 3600000).toISOString(),
+    scheduled_end: new Date(Date.now() + 8 * 3600000).toISOString(),
+    status: 'scheduled',
+    public_access_token: 'tok_summit_keynote_2026',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  store.events.set(demoEvent.id, demoEvent);
 
   // Default Translator Directory
   const translator1: Translator = {
@@ -1852,24 +1892,93 @@ export const Repository = {
   async createOrganization(params: {
     name: string;
     slug?: string;
-    plan_id?: string;
+    admin_name?: string;
+    admin_email: string;
+    contact_number?: string;
     status?: OrgStatus;
-  }): Promise<Organization> {
-    const rawName = params.name.trim();
-    let slug = (params.slug?.trim() || rawName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')).toLowerCase();
+    plan_id?: string;
+  }): Promise<{ organization: Organization; adminUser?: Profile | null }> {
+    const rawName = params.name ? params.name.trim() : '';
+    if (!rawName) {
+      throw new Error('Organization name is required.');
+    }
+
+    // 1. Check duplicate organization name
+    const existingOrgName = Array.from(store.organizations.values()).find(
+      (o) => o.name.trim().toLowerCase() === rawName.toLowerCase()
+    );
+    if (existingOrgName) {
+      throw new Error(`An organization with the name "${rawName}" already exists.`);
+    }
+
+    // 2. Validate email
+    const cleanEmail = params.admin_email ? params.admin_email.trim().toLowerCase() : '';
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+      throw new Error('A valid administrator email address is required.');
+    }
+
+    // 3. Check duplicate admin email across other organizations
+    const orgWithEmail = Array.from(store.organizations.values()).find(
+      (o) => o.admin_email?.toLowerCase() === cleanEmail
+    );
+    if (orgWithEmail) {
+      throw new Error(`The email "${cleanEmail}" is already assigned as administrator to "${orgWithEmail.name}".`);
+    }
+
+    let slug = (
+      params.slug?.trim() ||
+      rawName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+    ).toLowerCase();
     if (!slug) slug = `org-${Date.now().toString().slice(-6)}`;
 
     // Ensure slug uniqueness
     let finalSlug = slug;
     let counter = 1;
-    while (Array.from(store.organizations.values()).some(o => o.slug === finalSlug)) {
+    while (Array.from(store.organizations.values()).some((o) => o.slug === finalSlug)) {
       finalSlug = `${slug}-${counter++}`;
     }
 
     const orgId = randomUUID();
     const now = new Date().toISOString();
     const plans = await this.getPlans();
-    const plan = params.plan_id ? plans.find(p => p.id === params.plan_id || p.slug === params.plan_id) : plans[0];
+    const plan = params.plan_id
+      ? plans.find((p) => p.id === params.plan_id || p.slug === params.plan_id)
+      : plans[0];
+
+    // 4. Create or link administrator account
+    let adminProfile = await this.getProfileByEmail(cleanEmail);
+    if (!adminProfile) {
+      const generatedUsername = (
+        cleanEmail.split('@')[0].replace(/[^a-z0-9_]/gi, '') || 'admin'
+      ).toLowerCase() + `_${randomBytes(2).toString('hex')}`;
+
+      const adminId = randomUUID();
+      adminProfile = await this.createProfile({
+        id: adminId,
+        username: generatedUsername,
+        email: cleanEmail,
+        role: 'admin',
+        full_name: params.admin_name?.trim() || `${rawName} Admin`,
+        password: 'Admin123!',
+      });
+      adminProfile.organization_id = orgId;
+      adminProfile.phone = params.contact_number?.trim() || undefined;
+      store.profiles.set(adminProfile.id, adminProfile);
+    } else {
+      adminProfile.organization_id = orgId;
+      adminProfile.role = 'admin';
+      if (params.admin_name?.trim()) {
+        adminProfile.full_name = params.admin_name.trim();
+      }
+      if (params.contact_number?.trim()) {
+        adminProfile.phone = params.contact_number.trim();
+      }
+      store.profiles.set(adminProfile.id, adminProfile);
+    }
 
     const newOrg: Organization = {
       id: orgId,
@@ -1877,6 +1986,10 @@ export const Repository = {
       slug: finalSlug,
       plan_id: plan?.id || 'plan-starter',
       status: params.status || 'active',
+      admin_name: params.admin_name?.trim() || adminProfile.full_name || `${rawName} Admin`,
+      admin_email: cleanEmail,
+      contact_number: params.contact_number?.trim() || undefined,
+      admin_user_id: adminProfile.id,
       created_at: now,
       updated_at: now,
     };
@@ -1900,11 +2013,12 @@ export const Repository = {
 
           if (!error && data) {
             store.organizations.set(data.id, { ...newOrg, ...data, plan_id: newOrg.plan_id });
-            await this.logActivity(data.id, 'ORGANIZATION_CREATED', `Super Admin created organization "${data.name}"`);
-            return store.organizations.get(data.id)!;
-          }
-          if (error) {
-            console.warn('[Repository] createOrganization Supabase error:', error.message);
+            await this.logActivity(
+              data.id,
+              'ORGANIZATION_CREATED',
+              `Super Admin created organization "${data.name}" with administrator ${cleanEmail}`
+            );
+            return { organization: store.organizations.get(data.id)!, adminUser: adminProfile };
           }
         } catch (err: any) {
           console.warn('[Repository] createOrganization Supabase catch:', err.message);
@@ -1913,8 +2027,81 @@ export const Repository = {
     }
 
     store.organizations.set(newOrg.id, newOrg);
-    await this.logActivity(newOrg.id, 'ORGANIZATION_CREATED', `Super Admin created organization "${newOrg.name}"`);
-    return newOrg;
+    await this.logActivity(
+      newOrg.id,
+      'ORGANIZATION_CREATED',
+      `Super Admin created organization "${newOrg.name}" with administrator ${cleanEmail}`
+    );
+    return { organization: newOrg, adminUser: adminProfile };
+  },
+
+  async getOrganizationForAdmin(adminUserId: string, adminEmail: string): Promise<Organization | null> {
+    const cleanEmail = adminEmail ? adminEmail.trim().toLowerCase() : '';
+    // 1. Check in-memory store
+    for (const org of store.organizations.values()) {
+      if (
+        (adminUserId && org.admin_user_id === adminUserId) ||
+        (cleanEmail && org.admin_email?.toLowerCase() === cleanEmail)
+      ) {
+        return org;
+      }
+    }
+
+    // 2. Check profile organization_id link
+    if (adminUserId && store.profiles.has(adminUserId)) {
+      const profile = store.profiles.get(adminUserId);
+      if (profile?.organization_id && store.organizations.has(profile.organization_id)) {
+        return store.organizations.get(profile.organization_id)!;
+      }
+    }
+
+    // 3. Check Supabase if configured
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        try {
+          if (adminUserId) {
+            const { data } = await admin
+              .from('organizations')
+              .select('*')
+              .eq('admin_user_id', adminUserId)
+              .maybeSingle();
+            if (data) return data as Organization;
+          }
+          if (cleanEmail) {
+            const { data } = await admin
+              .from('organizations')
+              .select('*')
+              .ilike('admin_email', cleanEmail)
+              .maybeSingle();
+            if (data) return data as Organization;
+          }
+        } catch (err) {
+          console.warn('[Repository] getOrganizationForAdmin supabase error:', err);
+        }
+      }
+    }
+
+    return null;
+  },
+
+  async getOrganizationAdmin(orgId: string): Promise<Profile | null> {
+    const org = store.organizations.get(orgId);
+    if (!org) return null;
+
+    if (org.admin_user_id && store.profiles.has(org.admin_user_id)) {
+      return store.profiles.get(org.admin_user_id)!;
+    }
+    if (org.admin_email) {
+      for (const p of store.profiles.values()) {
+        if (p.email.toLowerCase() === org.admin_email.toLowerCase()) return p;
+      }
+    }
+    for (const p of store.profiles.values()) {
+      if (p.organization_id === orgId && p.role === 'admin') return p;
+    }
+
+    return null;
   },
 
   async getAllOrganizations(): Promise<Array<Organization & {
@@ -1924,6 +2111,16 @@ export const Repository = {
     usedMinutes: number;
     quotaMinutes: number;
     trialEndsAt?: string;
+    hasAdmin: boolean;
+    adminUser: {
+      id: string;
+      username: string;
+      email: string;
+      full_name?: string;
+      role: UserRole;
+      phone?: string;
+      status?: string;
+    } | null;
   }>> {
     if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();
@@ -1936,6 +2133,10 @@ export const Repository = {
               store.organizations.set(o.id, {
                 ...o,
                 plan_id: existing?.plan_id || o.plan_id || 'plan-starter',
+                admin_name: existing?.admin_name || o.admin_name,
+                admin_email: existing?.admin_email || o.admin_email,
+                contact_number: existing?.contact_number || o.contact_number,
+                admin_user_id: existing?.admin_user_id || o.admin_user_id,
               } as Organization);
             }
           }
@@ -1955,8 +2156,39 @@ export const Repository = {
         .filter(u => u.organization_id === org.id)
         .reduce((sum, u) => sum + Number(u.minutes_used), 0);
 
+      // Find associated admin profile
+      let adminUser: Profile | null = null;
+      if (org.admin_user_id && store.profiles.has(org.admin_user_id)) {
+        adminUser = store.profiles.get(org.admin_user_id)!;
+      } else if (org.admin_email) {
+        for (const p of store.profiles.values()) {
+          if (p.email.toLowerCase() === org.admin_email.toLowerCase()) {
+            adminUser = p;
+            break;
+          }
+        }
+      }
+
+      const hasAdmin = Boolean(adminUser || org.admin_email);
+
       return {
         ...org,
+        admin_name: org.admin_name || adminUser?.full_name || undefined,
+        admin_email: org.admin_email || adminUser?.email || undefined,
+        contact_number: org.contact_number || adminUser?.phone || undefined,
+        admin_user_id: org.admin_user_id || adminUser?.id || undefined,
+        hasAdmin,
+        adminUser: adminUser
+          ? {
+              id: adminUser.id,
+              username: adminUser.username,
+              email: adminUser.email,
+              full_name: adminUser.full_name,
+              role: adminUser.role,
+              phone: adminUser.phone,
+              status: adminUser.status || 'active',
+            }
+          : null,
         planName: plan?.name || 'Starter Pass',
         planPrice: (plan?.price_cents || 0) / 100,
         totalEvents: orgEvents.length,

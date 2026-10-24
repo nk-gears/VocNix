@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Repository } from '@/lib/db/repository';
+import { resolveRequestOrganization } from '@/lib/auth/organization-context';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const org = await Repository.getDefaultOrganization();
+    const org = await resolveRequestOrganization(req);
     const invoices = await Repository.getInvoices(org.id);
     return NextResponse.json({ success: true, invoices });
   } catch (err: any) {

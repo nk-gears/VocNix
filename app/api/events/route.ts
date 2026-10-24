@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Repository } from '@/lib/db/repository';
+import { resolveRequestOrganization } from '@/lib/auth/organization-context';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
     const limitParam = searchParams.get('limit');
     const limit = all ? undefined : (limitParam ? parseInt(limitParam, 10) : undefined);
 
-    const org = await Repository.getDefaultOrganization();
+    const org = await resolveRequestOrganization(req);
     const events = await Repository.getEvents(org.id, { limit });
     return NextResponse.json(
       { success: true, events, count: events.length },
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const org = await Repository.getDefaultOrganization();
+    const org = await resolveRequestOrganization(req);
 
     // Check plan limits before creating
     const usage = await Repository.getOrganizationUsage(org.id);

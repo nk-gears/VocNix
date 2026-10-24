@@ -109,6 +109,8 @@ export default function DashboardPage() {
 
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const [isImpersonating, setIsImpersonating] = useState(false);
+  const [impersonationData, setImpersonationData] = useState<any>(null);
+  const [isExitingImpersonation, setIsExitingImpersonation] = useState(false);
   const [accessDeniedAlert, setAccessDeniedAlert] = useState(false);
 
   const fetchDashboardData = async () => {
@@ -228,6 +230,17 @@ export default function DashboardPage() {
         setAccessDeniedAlert(true);
       }
     }
+
+    // Authoritative backend impersonation status check
+    fetch('/api/admin/impersonate', { cache: 'no-store' })
+      .then((res) => res.json())
+      .then((data) => {
+        if (isMounted && data.isImpersonating) {
+          setIsImpersonating(true);
+          setImpersonationData(data);
+        }
+      })
+      .catch(() => {});
 
     const scheduleNextPoll = () => {
       if (!isMounted) return;
@@ -577,6 +590,14 @@ export default function DashboardPage() {
     setTimeout(() => setCopiedToken(null), 2000);
   };
 
+  const handleExitImpersonation = async () => {
+    setIsExitingImpersonation(true);
+    try {
+      await fetch('/api/admin/impersonate/exit', { method: 'POST' });
+    } catch {}
+    window.location.href = '/admin';
+  };
+
   const currentLiveMinutes = liveElapsedSec > 0
     ? Number((liveElapsedSec / 60).toFixed(1))
     : (stats?.liveMinutes || 0);
@@ -608,24 +629,60 @@ export default function DashboardPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-      {/* Impersonation Banner if arriving via Impersonate */}
+      {/* Impersonation Banner: Super Admin Mode – Viewing [Organization Name] */}
       {isImpersonating && (
-        <div className="bg-amber-500/15 border border-amber-500/40 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-200 shadow-lg">
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 flex-shrink-0">
-              <UserCheck className="w-4 h-4" />
+        <div className="bg-gradient-to-r from-amber-500/20 via-amber-500/10 to-emerald-500/15 border-2 border-amber-500/50 p-4 sm:p-5 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs text-amber-100 shadow-xl backdrop-blur-md">
+          <div className="flex items-start sm:items-center space-x-3.5">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/30 border border-amber-400/50 flex items-center justify-center text-amber-300 flex-shrink-0 shadow-inner">
+              <UserCheck className="w-5 h-5 text-amber-300" />
             </div>
-            <div>
-              <strong className="text-amber-300 font-semibold text-sm">Super Admin Impersonation Active</strong>
-              <p className="text-slate-300">You are accessing the Admin dashboard directly without needing to log in or enter an email ID.</p>
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-black text-[10px] uppercase tracking-wider">
+                  Super Admin Mode
+                </span>
+                <h2 className="text-base sm:text-lg font-extrabold text-white tracking-tight">
+                  Super Admin Mode – Viewing {impersonationData?.organization?.name || orgData?.name || 'Organization'}
+                </h2>
+              </div>
+              <p className="text-slate-300 text-xs">
+                Organization Admin:{' '}
+                <span className="font-semibold text-amber-200">
+                  {impersonationData?.organization?.admin_name || orgData?.admin_name || 'Admin'}
+                </span>
+                {(impersonationData?.organization?.admin_email || orgData?.admin_email) && (
+                  <span> ({impersonationData?.organization?.admin_email || orgData?.admin_email})</span>
+                )}
+                {' • '}Status:{' '}
+                <span className="uppercase font-mono text-[10px] font-bold text-emerald-400">
+                  {impersonationData?.organization?.status || orgData?.status || 'Active'}
+                </span>
+                {(impersonationData?.organization?.contact_number || orgData?.contact_number) && (
+                  <span> • Phone: {impersonationData?.organization?.contact_number || orgData?.contact_number}</span>
+                )}
+              </p>
             </div>
           </div>
-          <Link
-            href="/admin"
-            className="px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold rounded-xl border border-amber-500/40 transition flex items-center space-x-1.5 self-start sm:self-auto flex-shrink-0"
-          >
-            <span>Exit to Super Admin</span>
-          </Link>
+
+          <div className="flex items-center gap-2 self-start md:self-auto flex-shrink-0">
+            <button
+              onClick={handleExitImpersonation}
+              disabled={isExitingImpersonation}
+              className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-slate-950 font-extrabold text-xs rounded-xl border border-amber-400/60 shadow-lg shadow-amber-500/30 transition flex items-center space-x-2 disabled:opacity-60"
+            >
+              {isExitingImpersonation ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-slate-950/30 border-t-slate-950 rounded-full animate-spin" />
+                  <span>Returning...</span>
+                </>
+              ) : (
+                <>
+                  <ShieldAlert className="w-4 h-4 text-slate-950" />
+                  <span>Return to Super Admin</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       )}
 

@@ -11,6 +11,7 @@ export interface UserSession {
   name: string;
   avatar?: string;
   role: UserRole;
+  organizationId?: string;
   createdAt: number;
   expiresAt: number;
 }
@@ -34,6 +35,7 @@ export function getUserDisplayName(user?: {
 }
 
 export const SESSION_COOKIE_NAME = 'vocnix_session';
+export const IMPERSONATION_COOKIE_NAME = 'vocnix_impersonate_org';
 export const STATE_COOKIE_NAME = 'vocnix_oauth_state';
 
 function getSessionSecret(): string {

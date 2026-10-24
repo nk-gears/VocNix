@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Repository } from '@/lib/db/repository';
+import { resolveRequestOrganization } from '@/lib/auth/organization-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'planSlug is required' }, { status: 400 });
     }
 
-    const org = await Repository.getDefaultOrganization();
+    const org = await resolveRequestOrganization(req);
     const result = await Repository.upgradeSubscription(org.id, planSlug);
     return NextResponse.json({ success: true, ...result });
   } catch (err: any) {
