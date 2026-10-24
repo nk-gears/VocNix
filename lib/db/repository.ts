@@ -1956,14 +1956,59 @@ export const Repository = {
         cleanEmail.split('@')[0].replace(/[^a-z0-9_]/gi, '') || 'admin'
       ).toLowerCase() + `_${randomBytes(2).toString('hex')}`;
 
-      const adminId = randomUUID();
+      let adminId = randomUUID();
+      const initialPassword = 'Admin123!';
+
+      if (isSupabaseConfigured()) {
+        const admin = getSupabaseAdmin();
+        if (admin) {
+          try {
+            // Check if user already exists in Supabase Auth
+            const { data: usersData } = await admin.auth.admin.listUsers();
+            const existingAuthUser = usersData?.users?.find(
+              (u) => (u.email || '').toLowerCase() === cleanEmail
+            );
+
+            if (existingAuthUser) {
+              adminId = existingAuthUser.id;
+              await admin.auth.admin.updateUserById(adminId, {
+                password: initialPassword,
+                email_confirm: true,
+                user_metadata: {
+                  username: generatedUsername,
+                  full_name: params.admin_name?.trim() || `${rawName} Admin`,
+                  role: 'admin',
+                },
+              });
+            } else {
+              const { data: createdAuthUser, error: authError } = await admin.auth.admin.createUser({
+                id: adminId,
+                email: cleanEmail,
+                password: initialPassword,
+                email_confirm: true,
+                user_metadata: {
+                  username: generatedUsername,
+                  full_name: params.admin_name?.trim() || `${rawName} Admin`,
+                  role: 'admin',
+                },
+              });
+              if (!authError && createdAuthUser?.user) {
+                adminId = createdAuthUser.user.id;
+              }
+            }
+          } catch (authErr) {
+            console.warn('[Repository] Supabase Auth createUser warning:', authErr);
+          }
+        }
+      }
+
       adminProfile = await this.createProfile({
         id: adminId,
         username: generatedUsername,
         email: cleanEmail,
         role: 'admin',
         full_name: params.admin_name?.trim() || `${rawName} Admin`,
-        password: 'Admin123!',
+        password: initialPassword,
       });
       adminProfile.organization_id = orgId;
       adminProfile.phone = params.contact_number?.trim() || undefined;
