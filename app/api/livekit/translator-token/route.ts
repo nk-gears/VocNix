@@ -82,6 +82,8 @@ export async function POST(req: NextRequest) {
         languageName: language.language_name,
         languageCode: language.language_code,
         eventTitle: event.title,
+        eventId: event.id,
+        eventPublicToken: event.public_access_token,
         startedAt: session.started_at,
       },
     });

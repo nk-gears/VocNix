@@ -19,7 +19,14 @@ import {
   Download,
   Disc,
   RotateCcw,
+  Share2,
+  Copy,
+  Check,
+  QrCode,
+  X,
+  ExternalLink,
 } from 'lucide-react';
+import QRCode from 'qrcode';
 import { AudioService, AudioConnectionStatus } from '@/lib/audio/AudioService';
 import { Mp3Recorder, RecordingState, Mp3RecordingResult } from '@/lib/audio/mp3Recorder';
 
@@ -37,11 +44,18 @@ export default function TranslatorRoomPage() {
     languageName: string;
     languageCode: string;
     eventTitle: string;
+    eventId?: string;
+    eventPublicToken?: string;
     startedAt?: string;
   } | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [livekitToken, setLivekitToken] = useState<string | null>(null);
   const [wsUrl, setWsUrl] = useState<string | null>(null);
+
+  // Audience Link Share State
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
 
   // Audio & Broadcast state
   const [broadcastState, setBroadcastState] = useState<'idle' | 'live' | 'paused' | 'stopped'>('idle');
@@ -380,6 +394,46 @@ export default function TranslatorRoomPage() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Audience Link Share logic
+  const audienceUrl = typeof window !== 'undefined' && roomData?.eventPublicToken
+    ? `${window.location.origin}/listen/${roomData.eventPublicToken}`
+    : '';
+
+  useEffect(() => {
+    if (isShareModalOpen && audienceUrl) {
+      QRCode.toDataURL(audienceUrl, {
+        width: 240,
+        margin: 2,
+        color: { dark: '#0f172a', light: '#ffffff' },
+      })
+        .then((url) => setQrCodeDataUrl(url))
+        .catch(() => {});
+    }
+  }, [isShareModalOpen, audienceUrl]);
+
+  const handleCopyLink = async () => {
+    if (!audienceUrl) return;
+    try {
+      await navigator.clipboard.writeText(audienceUrl);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2500);
+    } catch {
+      // Fallback
+    }
+  };
+
+  const handleNativeShare = async () => {
+    if (typeof navigator !== 'undefined' && navigator.share && audienceUrl) {
+      try {
+        await navigator.share({
+          title: roomData?.eventTitle || 'VocNix Live Event',
+          text: `Join the live translation audio session for ${roomData?.eventTitle || 'VocNix Live Event'}!`,
+          url: audienceUrl,
+        });
+      } catch {}
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center space-y-4">
@@ -430,8 +484,19 @@ export default function TranslatorRoomPage() {
           </div>
         </div>
 
-        {/* Live status badge */}
-        <div className="flex items-center space-x-3">
+        {/* Actions & Live status badge */}
+        <div className="flex flex-wrap items-center gap-3">
+          {roomData?.eventPublicToken && (
+            <button
+              onClick={() => setIsShareModalOpen(true)}
+              className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 flex items-center space-x-1.5 transition shadow-sm active:scale-95"
+              title="Share Audience Link"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Share Audience Link</span>
+            </button>
+          )}
+
           <div
             className={`px-4 py-2 rounded-xl text-xs font-bold tracking-wider uppercase flex items-center space-x-2 border ${
               broadcastState === 'live'
@@ -750,6 +815,85 @@ export default function TranslatorRoomPage() {
           </div>
         )}
       </div>
+
+      {/* Share Audience Link Modal */}
+      {isShareModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 sm:p-7 space-y-6 shadow-2xl relative text-slate-100">
+            <button
+              onClick={() => setIsShareModalOpen(false)}
+              className="absolute top-5 right-5 p-2 rounded-xl text-slate-400 hover:text-white bg-slate-800/60 hover:bg-slate-800 transition"
+              title="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="space-y-1.5 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto shadow-inner">
+                <Share2 className="w-6 h-6" />
+              </div>
+              <h3 className="text-xl font-bold text-white tracking-tight">Share Audience Link</h3>
+              <p className="text-xs text-slate-400 max-w-xs mx-auto">
+                Audience members open this link, select their preferred language, and enter their dedicated live audio stream.
+              </p>
+            </div>
+
+            {/* QR Code Preview */}
+            {qrCodeDataUrl && (
+              <div className="flex flex-col items-center justify-center space-y-2 py-1">
+                <div className="p-3 bg-white rounded-2xl shadow-lg border border-slate-700/40">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={qrCodeDataUrl} alt="Audience QR Code" className="w-40 h-40 rounded-lg" />
+                </div>
+                <span className="text-[11px] text-slate-400 flex items-center space-x-1">
+                  <QrCode className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Scan to listen directly on mobile</span>
+                </span>
+              </div>
+            )}
+
+            {/* Direct Audience Link Input with Copy button */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-300">Audience Direct Link</label>
+              <div className="flex items-center space-x-2 bg-slate-950 border border-slate-800 rounded-xl p-1.5 focus-within:border-emerald-500 transition">
+                <input
+                  type="text"
+                  readOnly
+                  value={audienceUrl}
+                  className="bg-transparent px-3 text-xs text-slate-200 font-mono w-full focus:outline-none select-all"
+                />
+                <button
+                  onClick={handleCopyLink}
+                  className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white font-semibold text-xs flex items-center space-x-1.5 transition flex-shrink-0 shadow-md shadow-emerald-500/20"
+                >
+                  {copiedLink ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-white" />
+                      <span>Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Web Share API Button if supported */}
+            {typeof navigator !== 'undefined' && 'share' in navigator && (
+              <button
+                onClick={handleNativeShare}
+                className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-98 text-slate-200 text-xs font-semibold flex items-center justify-center space-x-2 border border-slate-700 transition"
+              >
+                <Share2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Share via App (WhatsApp, Messages...)</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

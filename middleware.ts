@@ -91,8 +91,9 @@ export async function middleware(req: NextRequest) {
     if (!session || session.role !== 'super_admin') {
       const forwardedHost = req.headers.get('x-forwarded-host');
       const host = forwardedHost || req.headers.get('host') || 'localhost:3000';
+      const isLocalhost = host.includes('localhost') || host.includes('127.0.0.1');
       const forwardedProto = req.headers.get('x-forwarded-proto');
-      const isHttps = process.env.NODE_ENV === 'production' || forwardedProto === 'https' || req.nextUrl?.protocol === 'https:' || Boolean(forwardedHost);
+      const isHttps = !isLocalhost && (forwardedProto === 'https' || (!forwardedHost && process.env.NODE_ENV === 'production'));
       const protocol = isHttps ? 'https' : 'http';
       const origin = `${protocol}://${host}`;
       const directLoginUrl = new URL('/api/auth/super-admin-direct', origin);
@@ -120,8 +121,9 @@ export async function middleware(req: NextRequest) {
       if (!impersonateOrgId && !isImpersonatingQuery) {
         const forwardedHost = req.headers.get('x-forwarded-host');
         const host = forwardedHost || req.headers.get('host') || 'localhost:3000';
+        const isLocalhost = host.includes('localhost') || host.includes('127.0.0.1');
         const forwardedProto = req.headers.get('x-forwarded-proto');
-        const isHttps = process.env.NODE_ENV === 'production' || forwardedProto === 'https' || req.nextUrl?.protocol === 'https:' || Boolean(forwardedHost);
+        const isHttps = !isLocalhost && (forwardedProto === 'https' || (!forwardedHost && process.env.NODE_ENV === 'production'));
         const protocol = isHttps ? 'https' : 'http';
         const origin = `${protocol}://${host}`;
         return NextResponse.redirect(new URL('/admin', origin));

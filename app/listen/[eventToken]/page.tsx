@@ -9,28 +9,48 @@ import {
   Radio,
   Globe,
   AlertCircle,
-  Play,
-  Pause,
   Loader2,
   Users,
+  CheckCircle2,
+  Lock,
+  ArrowRight,
 } from 'lucide-react';
 import { AudioService, AudioConnectionStatus } from '@/lib/audio/AudioService';
+
+interface LanguageOption {
+  id: string;
+  languageName: string;
+  languageCode: string;
+  roomId: string;
+  roomStatus: string;
+}
 
 export default function AudienceListenPage() {
   const params = useParams();
   const eventToken = params?.eventToken as string;
 
-  // Event & Language State
+  // Event & Language Selection State
   const [loadingEvent, setLoadingEvent] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [eventData, setEventData] = useState<any>(null);
-  const [selectedLanguageRoom, setSelectedLanguageRoom] = useState<any>(null);
+  const [eventData, setEventData] = useState<{
+    id: string;
+    title: string;
+    description?: string;
+    status: string;
+  } | null>(null);
+
+  // Available languages during selection (purged once locked)
+  const [availableLanguages, setAvailableLanguages] = useState<LanguageOption[]>([]);
+  const [pendingSelection, setPendingSelection] = useState<LanguageOption | null>(null);
+
+  // Strict Language Lock State
+  const [isLanguageLocked, setIsLanguageLocked] = useState(false);
+  const [lockedLanguage, setLockedLanguage] = useState<LanguageOption | null>(null);
 
   // Audio Connection State
   const [connectingAudio, setConnectingAudio] = useState(false);
   const [audioConnected, setAudioConnected] = useState(false);
   const [audioState, setAudioState] = useState<AudioConnectionStatus>('idle');
-  const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState<number>(1);
   const [isMuted, setIsMuted] = useState(false);
   const [hasRemoteTrack, setHasRemoteTrack] = useState(false);
@@ -39,56 +59,68 @@ export default function AudienceListenPage() {
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const audioServiceRef = useRef<AudioService | null>(null);
   const sessionKeyRef = useRef<string>('');
-  const selectedRoomRef = useRef<any>(null);
+  const lockedRoomRef = useRef<string | null>(null);
 
   useEffect(() => {
-    selectedRoomRef.current = selectedLanguageRoom;
-  }, [selectedLanguageRoom]);
+    lockedRoomRef.current = lockedLanguage?.roomId || null;
+  }, [lockedLanguage]);
 
-  // 1. Fetch Event details and available dynamic languages
+  // 1. Initial Load: Fetch event metadata and check for existing language lock
   useEffect(() => {
-    async function loadEvent() {
+    async function initAudiencePage() {
       if (!eventToken) return;
+
       try {
         setLoadingEvent(true);
         setError(null);
 
-        const res = await fetch('/api/events?all=true', { cache: 'no-store' });
+        const res = await fetch(`/api/audience/event/${eventToken}`, { cache: 'no-store' });
         const data = await res.json();
 
         if (!res.ok || !data.success) {
-          setError(data.error || 'Failed to load event data');
+          setError(data.error || 'Failed to load live event');
           setLoadingEvent(false);
           return;
         }
 
-        const currentEvent = data.events?.find((e: any) => e.public_access_token === eventToken);
-        if (!currentEvent) {
-          setError('Event not found or the access link is invalid/expired.');
-          setLoadingEvent(false);
-          return;
+        setEventData(data.event);
+        const langs: LanguageOption[] = data.languages || [];
+
+        // Check if audience member already has an established lock (from server cookie or local storage)
+        const localLockedRoomId = typeof window !== 'undefined'
+          ? localStorage.getItem('vocnix_locked_room_' + eventToken)
+          : null;
+        const targetLockedRoomId = data.lockedRoomId || localLockedRoomId;
+
+        if (targetLockedRoomId) {
+          const matchedLang = langs.find((l) => l.roomId === targetLockedRoomId);
+          if (matchedLang) {
+            // Strictly lock and purge all other languages from client memory
+            setLockedLanguage(matchedLang);
+            setIsLanguageLocked(true);
+            setAvailableLanguages([matchedLang]);
+            setLoadingEvent(false);
+            return;
+          }
         }
 
-        setEventData(currentEvent);
-
-        // Pre-select first available language room
-        if (currentEvent.rooms && currentEvent.rooms.length > 0) {
-          const firstRoom = currentEvent.rooms[0];
-          const lang = currentEvent.languages?.find((l: any) => l.id === firstRoom.event_language_id);
-          setSelectedLanguageRoom({ ...firstRoom, languageName: lang?.language_name || 'Translation' });
+        // Language selection required: Present all languages
+        setAvailableLanguages(langs);
+        if (langs.length > 0) {
+          setPendingSelection(langs[0]);
         }
 
         setLoadingEvent(false);
       } catch (err: any) {
-        setError(err.message || 'Error connecting to server');
+        setError(err.message || 'Error connecting to event service');
         setLoadingEvent(false);
       }
     }
 
-    loadEvent();
+    initAudiencePage();
   }, [eventToken]);
 
-  // 2. Setup AudioService and cleanup on unmount
+  // 2. Initialize Audio Engine & teardown listeners
   useEffect(() => {
     const service = new AudioService({
       onConnectionChange: (status) => {
@@ -97,7 +129,6 @@ export default function AudienceListenPage() {
           setAudioConnected(true);
         } else if (status === 'disconnected' || status === 'error') {
           setAudioConnected(false);
-          setIsPlaying(false);
         }
       },
       onParticipantCountChange: (count) => {
@@ -114,14 +145,11 @@ export default function AudienceListenPage() {
     audioServiceRef.current = service;
 
     return () => {
-      // Leave audience session
-      const room = selectedRoomRef.current;
+      // Clean leave notification
+      const roomId = lockedRoomRef.current;
       const sKey = sessionKeyRef.current;
-      if (room?.id && sKey) {
-        const payload = JSON.stringify({
-          roomId: room.id,
-          sessionKey: sKey,
-        });
+      if (roomId && sKey) {
+        const payload = JSON.stringify({ roomId, sessionKey: sKey });
         if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
           navigator.sendBeacon('/api/audience/leave', new Blob([payload], { type: 'application/json' }));
         } else {
@@ -137,16 +165,13 @@ export default function AudienceListenPage() {
     };
   }, []);
 
-  // Reliable tab close browser leave cleanup via sendBeacon
+  // 3. Tab close browser unload cleanup via sendBeacon
   useEffect(() => {
     const handleLeave = () => {
-      const room = selectedRoomRef.current;
+      const roomId = lockedRoomRef.current;
       const sKey = sessionKeyRef.current;
-      if (room?.id && sKey) {
-        const payload = JSON.stringify({
-          roomId: room.id,
-          sessionKey: sKey,
-        });
+      if (roomId && sKey) {
+        const payload = JSON.stringify({ roomId, sessionKey: sKey });
         if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
           navigator.sendBeacon('/api/audience/leave', new Blob([payload], { type: 'application/json' }));
         } else {
@@ -166,9 +191,9 @@ export default function AudienceListenPage() {
     };
   }, []);
 
-  // Periodic heartbeat while connected to maintain live count & record duration
+  // 4. Periodic heartbeat while connected
   useEffect(() => {
-    if (!selectedLanguageRoom?.id || !sessionKeyRef.current || !audioConnected) return;
+    if (!lockedLanguage?.roomId || !sessionKeyRef.current || !audioConnected) return;
 
     const interval = setInterval(async () => {
       try {
@@ -176,7 +201,7 @@ export default function AudienceListenPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            roomId: selectedLanguageRoom.id,
+            roomId: lockedLanguage.roomId,
             sessionKey: sessionKeyRef.current,
           }),
         });
@@ -188,95 +213,78 @@ export default function AudienceListenPage() {
     }, 15000);
 
     return () => clearInterval(interval);
-  }, [selectedLanguageRoom?.id, audioConnected]);
+  }, [lockedLanguage?.roomId, audioConnected]);
 
-  // 3. Connect to selected dynamic language room
-  const handleConnectToRoom = async (roomObj: any) => {
-    if (!roomObj) return;
+  // 5. Connect to the validated, locked room
+  const connectToAudioRoom = async (targetLang: LanguageOption) => {
+    if (!targetLang?.roomId) return;
 
     try {
       setConnectingAudio(true);
       setError(null);
 
-      // If switching from another room, leave previous channel cleanly
-      if (selectedRoomRef.current?.id && selectedRoomRef.current.id !== roomObj.id && sessionKeyRef.current) {
-        await fetch('/api/audience/leave', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            roomId: selectedRoomRef.current.id,
-            sessionKey: sessionKeyRef.current,
-          }),
-        }).catch(() => {});
-      }
-
-      // Disconnect previous audio if connected
-      if (audioServiceRef.current) {
-        audioServiceRef.current.disconnect();
-      }
-
-      // Request audience token from server
+      // Request audience token from server (validates and sets server-side cookie lock)
       const res = await fetch('/api/livekit/audience-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           eventToken,
-          roomId: roomObj.id,
+          roomId: targetLang.roomId,
           sessionKey: sessionKeyRef.current || undefined,
         }),
       });
 
-
       const data = await res.json();
       if (!res.ok || !data.success) {
-        setError(data.error || 'Failed to connect to language channel');
+        setError(data.error || 'Failed to authenticate language channel');
         setConnectingAudio(false);
         return;
       }
 
       sessionKeyRef.current = data.sessionKey;
-      setListenerCount(data.room.listeners || 1);
+      setListenerCount(data.room?.listeners || 1);
 
-      // Connect real-time audio client engine
+      // Connect WebRTC Audio Engine
       let resolvedWsUrl = data.wsUrl;
       if (typeof window !== 'undefined' && window.location.hostname === 'localhost' && resolvedWsUrl.includes('127.0.0.1')) {
         resolvedWsUrl = resolvedWsUrl.replace('127.0.0.1', 'localhost');
       }
-      if (!resolvedWsUrl || resolvedWsUrl.includes('•') || (!resolvedWsUrl.startsWith('ws://') && !resolvedWsUrl.startsWith('wss://'))) {
-        throw new Error(
-          `Invalid audio connection URL: "${resolvedWsUrl}". Please verify the WebSocket connection URL in your environment settings.`
-        );
-      }
+
       await audioServiceRef.current?.connectAudience({
         wsUrl: resolvedWsUrl,
         token: data.token,
         targetAudioElement: audioElementRef.current,
       });
 
-      // Browser Autoplay: Play audio element
+      // Browser Autoplay: Play audio
       if (audioElementRef.current) {
         audioElementRef.current.volume = volume;
-        await audioElementRef.current.play().catch(() => {
-          // If browser policy blocks, prompt user to tap
-        });
+        await audioElementRef.current.play().catch(() => {});
       }
 
-      setIsPlaying(true);
       setConnectingAudio(false);
     } catch (err: any) {
-      setError(err.message || 'Failed to play audio stream');
+      setError(err.message || 'Failed to connect to live audio stream');
       setConnectingAudio(false);
     }
   };
 
-  const handleLanguageChange = (room: any) => {
-    const lang = eventData?.languages?.find((l: any) => l.id === room.event_language_id);
-    const roomWithLang = { ...room, languageName: lang?.language_name || 'Translation' };
-    setSelectedLanguageRoom(roomWithLang);
+  // 6. Confirm Language Selection (Step 1 -> Step 2)
+  const handleConfirmLanguageSelection = async () => {
+    if (!pendingSelection) return;
 
-    if (audioConnected) {
-      handleConnectToRoom(roomWithLang);
+    // Persist choice in localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('vocnix_locked_room_' + eventToken, pendingSelection.roomId);
     }
+
+    // Permanently lock language and purge all other languages from client state
+    setLockedLanguage(pendingSelection);
+    setIsLanguageLocked(true);
+    setAvailableLanguages([pendingSelection]);
+
+    // Connect audio stream
+    await connectToAudioRoom(pendingSelection);
   };
 
   const handleVolumeChange = (newVol: number) => {
@@ -296,16 +304,16 @@ export default function AudienceListenPage() {
 
   if (loadingEvent) {
     return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center space-y-4">
+      <div className="min-h-[75vh] flex flex-col items-center justify-center space-y-4">
         <Loader2 className="w-10 h-10 text-emerald-400 animate-spin" />
         <p className="text-slate-400 text-sm">Joining event audio channel...</p>
       </div>
     );
   }
 
-  if (error && !eventData) {
+  if (error && !eventData && !isLanguageLocked) {
     return (
-      <div className="max-w-md mx-auto my-16 p-8 bg-slate-900/90 border border-red-500/30 rounded-2xl text-center space-y-4">
+      <div className="max-w-md mx-auto my-16 p-8 bg-slate-900/90 border border-red-500/30 rounded-3xl text-center space-y-4">
         <AlertCircle className="w-12 h-12 text-red-400 mx-auto" />
         <h2 className="text-xl font-bold text-white">Event Unavailable</h2>
         <p className="text-sm text-slate-300">{error}</p>
@@ -315,168 +323,219 @@ export default function AudienceListenPage() {
 
   return (
     <div className="max-w-xl mx-auto px-4 py-8 sm:py-12 space-y-6">
-      {/* Hidden audio element for WebRTC audio track playback */}
+      {/* Hidden audio element for WebRTC playback */}
       <audio ref={audioElementRef} playsInline autoPlay />
 
-      {/* Event Header */}
-      <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 text-center space-y-3">
+      {/* Global Event Header */}
+      <div className="bg-slate-900/70 border border-slate-800 rounded-3xl p-6 sm:p-7 text-center space-y-3 shadow-xl backdrop-blur">
         <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
           <Radio className="w-3.5 h-3.5 animate-pulse" />
-          <span>LIVE AUDIO BROADCAST</span>
+          <span>VOCNIX LIVE BROADCAST</span>
         </div>
         <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-          {eventData?.title}
+          {eventData?.title || 'Live Translation Session'}
         </h1>
         {eventData?.description && (
           <p className="text-sm text-slate-400 max-w-md mx-auto">{eventData.description}</p>
         )}
       </div>
 
-      {/* Dynamic Language Selection */}
-      <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <label className="text-sm font-semibold text-slate-200 flex items-center space-x-2">
-            <Globe className="w-4 h-4 text-emerald-400" />
-            <span>Select Your Language:</span>
-          </label>
-          <span className="text-xs text-slate-500">Real-time dynamic channels</span>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-          {eventData?.rooms?.map((room: any) => {
-            const lang = eventData.languages?.find((l: any) => l.id === room.event_language_id);
-            const isSelected = selectedLanguageRoom?.id === room.id;
-            return (
-              <button
-                key={room.id}
-                onClick={() => handleLanguageChange(room)}
-                className={`p-3.5 rounded-xl border text-center transition flex flex-col items-center justify-center space-y-1 ${
-                  isSelected
-                    ? 'bg-emerald-500/15 border-emerald-500/50 text-white font-bold shadow-md shadow-emerald-500/10'
-                    : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
-                }`}
-              >
-                <span className="text-sm">{lang?.language_name || 'Language'}</span>
-                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
-                  {lang?.language_code}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Audio Playback Deck */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 sm:p-8 space-y-6 text-center shadow-xl">
-        {/* Connection status indicator */}
-        <div className="flex items-center justify-center space-x-4 text-xs">
-          <div className="flex items-center space-x-1.5 text-slate-400">
-            <span
-              className={`w-2.5 h-2.5 rounded-full ${
-                audioConnected ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'
-              }`}
-            />
-            <span className="capitalize">{audioState}</span>
-          </div>
-          <span>•</span>
-          <div className="flex items-center space-x-1 text-slate-400">
-            <Users className="w-3.5 h-3.5 text-blue-400" />
-            <span>{listenerCount} Listening</span>
+      {/* Notification error banner */}
+      {error && (
+        <div className="p-4 rounded-2xl bg-red-500/15 border border-red-500/30 flex items-start space-x-3 text-red-200 text-xs">
+          <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <strong className="font-semibold text-red-100">Notice: </strong>
+            <span>{error}</span>
           </div>
         </div>
+      )}
 
-        {/* Audio Wave Visualizer while playing */}
-        <div className="h-12 flex items-center justify-center space-x-1.5 py-2">
-          {audioConnected && hasRemoteTrack ? (
-            <>
-              <div className="w-1.5 bg-emerald-400 rounded-full animate-wave-1" />
-              <div className="w-1.5 bg-emerald-400 rounded-full animate-wave-2" />
-              <div className="w-1.5 bg-emerald-400 rounded-full animate-wave-3" />
-              <div className="w-1.5 bg-emerald-400 rounded-full animate-wave-4" />
-              <div className="w-1.5 bg-emerald-400 rounded-full animate-wave-5" />
-            </>
+      {/* =========================================================================
+          PHASE 1: LANGUAGE SELECTION FIRST (Mandatory Before Entering Session)
+         ========================================================================= */}
+      {!isLanguageLocked ? (
+        <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl relative overflow-hidden">
+          <div className="space-y-2 border-b border-slate-800 pb-5 text-center sm:text-left">
+            <div className="inline-flex items-center space-x-1.5 text-xs font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+              <Globe className="w-3.5 h-3.5" />
+              <span>Step 1 • Select Language</span>
+            </div>
+            <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+              Select Your Preferred Language
+            </h2>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Choose the language you wish to hear. Once you enter the session, your listening channel will be locked to this language.
+            </p>
+          </div>
+
+          {/* Language Options Grid */}
+          <div className="space-y-3">
+            <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+              Available Broadcast Channels ({availableLanguages.length})
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {availableLanguages.map((lang) => {
+                const isSelected = pendingSelection?.id === lang.id;
+                const isLive = lang.roomStatus === 'live';
+                return (
+                  <button
+                    key={lang.id}
+                    type="button"
+                    onClick={() => setPendingSelection(lang)}
+                    className={`w-full p-4 rounded-2xl border text-left transition relative flex items-center justify-between ${
+                      isSelected
+                        ? 'bg-emerald-500/15 border-emerald-500/60 shadow-lg shadow-emerald-500/10 ring-2 ring-emerald-500/20'
+                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 hover:bg-slate-950'
+                    }`}
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-bold text-base text-white">{lang.languageName}</span>
+                        <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                          {lang.languageCode}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 flex items-center space-x-1.5">
+                        <span
+                          className={`w-2 h-2 rounded-full ${isLive ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`}
+                        />
+                        <span>{isLive ? 'Live broadcasting' : 'Ready'}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex-shrink-0">
+                      {isSelected ? (
+                        <div className="w-6 h-6 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center shadow">
+                          <CheckCircle2 className="w-4 h-4 text-white" />
+                        </div>
+                      ) : (
+                        <div className="w-6 h-6 rounded-full border border-slate-700" />
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Confirmation Action Button */}
+          <div className="pt-2">
+            <button
+              onClick={handleConfirmLanguageSelection}
+              disabled={!pendingSelection || connectingAudio}
+              className="w-full py-4 rounded-2xl bg-emerald-500 hover:bg-emerald-600 active:scale-[0.99] text-white font-bold text-sm sm:text-base flex items-center justify-center space-x-2.5 transition shadow-xl shadow-emerald-500/25 disabled:opacity-50"
+            >
+              {connectingAudio ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>Entering Session...</span>
+                </>
+              ) : (
+                <>
+                  <Headphones className="w-5 h-5" />
+                  <span>Confirm & Listen in {pendingSelection?.languageName || 'Selected Language'}</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* =========================================================================
+            PHASE 2: STRICT SINGLE-LANGUAGE LISTENING CONSOLE
+            - Zero other languages visible
+            - Zero language dropdowns, tabs, or buttons
+            - Locked permanently to the chosen language
+           ========================================================================= */
+        <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 text-center shadow-2xl relative">
+          {/* Strict Single-Language Lock Indicator */}
+          <div className="inline-flex items-center space-x-2 px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold tracking-wide">
+            <Lock className="w-3.5 h-3.5 text-emerald-400" />
+            <span>LISTENING IN {lockedLanguage?.languageName.toUpperCase()}</span>
+          </div>
+
+          {/* Connection status indicator & Listener count */}
+          <div className="flex items-center justify-center space-x-4 text-xs">
+            <div className="flex items-center space-x-1.5 text-slate-400">
+              <span
+                className={`w-2.5 h-2.5 rounded-full ${audioConnected ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`}
+              />
+              <span className="capitalize">{audioState}</span>
+            </div>
+            <span>•</span>
+            <div className="flex items-center space-x-1 text-slate-400">
+              <Users className="w-3.5 h-3.5 text-blue-400" />
+              <span>{listenerCount} Listening</span>
+            </div>
+          </div>
+
+          {/* Live Audio Visualizer */}
+          <div className="h-14 flex items-center justify-center space-x-2 py-2">
+            {audioConnected && hasRemoteTrack ? (
+              <>
+                <div className="w-1.5 h-8 bg-emerald-400 rounded-full animate-pulse" />
+                <div className="w-1.5 h-12 bg-emerald-400 rounded-full animate-pulse" />
+                <div className="w-1.5 h-10 bg-emerald-400 rounded-full animate-pulse" />
+                <div className="w-1.5 h-6 bg-emerald-400 rounded-full animate-pulse" />
+                <div className="w-1.5 h-12 bg-emerald-400 rounded-full animate-pulse" />
+              </>
+            ) : (
+              <div className="text-xs text-slate-500 italic">
+                {audioConnected
+                  ? 'Waiting for ' + (lockedLanguage?.languageName || '') + ' translator audio...'
+                  : 'Audio stream idle'}
+              </div>
+            )}
+          </div>
+
+          {/* Primary Action Button (TAP TO LISTEN) */}
+          {!audioConnected ? (
+            <button
+              onClick={() => lockedLanguage && connectToAudioRoom(lockedLanguage)}
+              disabled={connectingAudio || !lockedLanguage}
+              className="w-full py-4 rounded-2xl bg-emerald-500 hover:bg-emerald-600 active:scale-[0.99] text-white font-bold text-base flex items-center justify-center space-x-3 transition shadow-xl shadow-emerald-500/25 disabled:opacity-50"
+            >
+              {connectingAudio ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>CONNECTING LIVE AUDIO...</span>
+                </>
+              ) : (
+                <>
+                  <Headphones className="w-5 h-5" />
+                  <span>TAP TO LISTEN IN {lockedLanguage?.languageName.toUpperCase()}</span>
+                </>
+              )}
+            </button>
           ) : (
-            <div className="text-xs text-slate-500 italic">
-              {audioConnected ? 'Waiting for translator microphone audio...' : 'Audio disconnected'}
+            <div className="space-y-4 pt-2">
+              <div className="flex items-center justify-center space-x-4 bg-slate-950/70 border border-slate-800/80 p-4 rounded-2xl max-w-xs mx-auto">
+                <button
+                  onClick={toggleMute}
+                  className="p-3 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-200 transition"
+                  title={isMuted ? 'Unmute' : 'Mute'}
+                >
+                  {isMuted ? <VolumeX className="w-5 h-5 text-red-400" /> : <Volume2 className="w-5 h-5" />}
+                </button>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={isMuted ? 0 : volume}
+                  onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                  className="w-36 accent-emerald-500 cursor-pointer"
+                />
+              </div>
+
+              <p className="text-[11px] text-slate-500">
+                Connected to dedicated {lockedLanguage?.languageName} live stream. Audio is synchronized in real time.
+              </p>
             </div>
           )}
         </div>
-
-        {/* Primary TAP TO LISTEN Button (Browser Autoplay Compliant) */}
-        {!audioConnected ? (
-          <button
-            onClick={() => handleConnectToRoom(selectedLanguageRoom)}
-            disabled={connectingAudio || !selectedLanguageRoom}
-            className="w-full py-4 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-[0.99] text-white font-bold text-base flex items-center justify-center space-x-3 transition shadow-lg shadow-emerald-500/20 disabled:opacity-50"
-          >
-            {connectingAudio ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                <span>CONNECTING LIVE AUDIO...</span>
-              </>
-            ) : (
-              <>
-                <Headphones className="w-5 h-5" />
-                <span>TAP TO LISTEN ({selectedLanguageRoom?.languageName?.toUpperCase() || 'AUDIO'})</span>
-              </>
-            )}
-          </button>
-        ) : (
-          <div className="space-y-4">
-            <div className="flex items-center justify-center space-x-3">
-              <button
-                onClick={toggleMute}
-                className="p-3 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-200 transition"
-              >
-                {isMuted ? <VolumeX className="w-5 h-5 text-red-400" /> : <Volume2 className="w-5 h-5" />}
-              </button>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={isMuted ? 0 : volume}
-                onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
-                className="w-32 sm:w-44 accent-emerald-500"
-              />
-            </div>
-
-            <button
-              onClick={() => {
-                const room = selectedRoomRef.current || selectedLanguageRoom;
-                const sKey = sessionKeyRef.current;
-                if (room?.id && sKey) {
-                  fetch('/api/audience/leave', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      roomId: room.id,
-                      sessionKey: sKey,
-                    }),
-                  }).catch(() => {});
-                }
-                audioServiceRef.current?.disconnect();
-                setAudioConnected(false);
-                setIsPlaying(false);
-              }}
-              className="text-xs text-slate-400 hover:text-red-400 transition"
-            >
-              Stop Listening
-            </button>
-          </div>
-        )}
-
-        {error && (
-          <div className="p-3 bg-red-950/40 border border-red-500/40 rounded-xl text-xs text-red-200 flex items-center justify-center space-x-2">
-            <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-      </div>
-
-      <div className="text-center text-xs text-slate-500">
-        <p>No account required • Real-time WebRTC audio • Protected against audio leakage</p>
-      </div>
+      )}
     </div>
   );
 }

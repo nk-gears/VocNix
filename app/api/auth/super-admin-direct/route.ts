@@ -35,20 +35,15 @@ export async function GET(req: NextRequest) {
 
     const forwardedHost = req.headers.get('x-forwarded-host');
     const forwardedProto = req.headers.get('x-forwarded-proto');
-    let redirectOrigin: string;
-
-    if (forwardedHost) {
-      const isHttps = forwardedProto === 'https' || req.nextUrl?.protocol === 'https:' || true;
-      redirectOrigin = `${isHttps ? 'https' : 'http'}://${forwardedHost}`;
-    } else {
-      const host = req.headers.get('host') || 'localhost:3000';
-      const isHttps = process.env.NODE_ENV === 'production' || forwardedProto === 'https' || req.nextUrl?.protocol === 'https:';
-      redirectOrigin = `${isHttps ? 'https' : 'http'}://${host}`;
-    }
+    const host = forwardedHost || req.headers.get('host') || 'localhost:3000';
+    const isLocalhost = host.includes('localhost') || host.includes('127.0.0.1');
+    const isHttps = !isLocalhost && (forwardedProto === 'https' || (!forwardedHost && process.env.NODE_ENV === 'production'));
+    const protocol = isHttps ? 'https' : 'http';
+    const redirectOrigin = `${protocol}://${host}`;
 
     const response = NextResponse.redirect(new URL('/admin', redirectOrigin));
 
-    const isCookieSecure = process.env.NODE_ENV === 'production' || forwardedProto === 'https' || Boolean(forwardedHost);
+    const isCookieSecure = isHttps;
 
     response.cookies.set(SESSION_COOKIE_NAME, signedToken, {
       httpOnly: true,
