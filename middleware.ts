@@ -88,15 +88,9 @@ export async function middleware(req: NextRequest) {
     const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
     const session = token ? await verifySession(token) : null;
 
-    if (!session) {
-      const loginUrl = new URL('/super-admin/login', req.url);
-      return NextResponse.redirect(loginUrl);
-    }
-
-    // Role-based access control: Admin is strictly prohibited from accessing Super Admin portal
-    if (session.role !== 'super_admin') {
-      const redirectUrl = new URL('/dashboard?error=access_denied', req.url);
-      return NextResponse.redirect(redirectUrl);
+    if (!session || session.role !== 'super_admin') {
+      const directLoginUrl = new URL('/api/auth/super-admin-direct', req.url);
+      return NextResponse.redirect(directLoginUrl);
     }
 
     return NextResponse.next();
