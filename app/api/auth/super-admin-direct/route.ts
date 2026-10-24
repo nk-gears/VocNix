@@ -33,15 +33,26 @@ export async function GET(req: NextRequest) {
 
     const signedToken = await signSession(session);
 
-    const redirectOrigin = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
+    const forwardedHost = req.headers.get('x-forwarded-host');
+    const forwardedProto = req.headers.get('x-forwarded-proto');
+    let redirectOrigin: string;
+
+    if (forwardedHost) {
+      const isHttps = forwardedProto === 'https' || req.nextUrl?.protocol === 'https:' || true;
+      redirectOrigin = `${isHttps ? 'https' : 'http'}://${forwardedHost}`;
+    } else {
+      const host = req.headers.get('host') || 'localhost:3000';
+      const isHttps = process.env.NODE_ENV === 'production' || forwardedProto === 'https' || req.nextUrl?.protocol === 'https:';
+      redirectOrigin = `${isHttps ? 'https' : 'http'}://${host}`;
+    }
+
     const response = NextResponse.redirect(new URL('/admin', redirectOrigin));
 
-    const forwardedProto = req.headers.get('x-forwarded-proto');
-    const isHttps = process.env.NODE_ENV === 'production' || forwardedProto === 'https' || req.nextUrl?.protocol === 'https:';
+    const isCookieSecure = process.env.NODE_ENV === 'production' || forwardedProto === 'https' || Boolean(forwardedHost);
 
     response.cookies.set(SESSION_COOKIE_NAME, signedToken, {
       httpOnly: true,
-      secure: isHttps,
+      secure: isCookieSecure,
       sameSite: 'lax',
       path: '/',
       maxAge: 7 * 24 * 60 * 60,
@@ -50,6 +61,6 @@ export async function GET(req: NextRequest) {
     return response;
   } catch (err: any) {
     console.error('[API /api/auth/super-admin-direct] Error:', err);
-    return NextResponse.redirect(new URL('/admin', req.nextUrl.origin));
+    return NextResponse.redirect(new URL('/admin', req.url));
   }
 }

@@ -66,7 +66,19 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const redirectOrigin = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
+  const forwardedHost = req.headers.get('x-forwarded-host');
+  const forwardedProto = req.headers.get('x-forwarded-proto');
+  let redirectOrigin: string;
+
+  if (forwardedHost) {
+    const isHttps = forwardedProto === 'https' || req.nextUrl?.protocol === 'https:' || true;
+    redirectOrigin = `${isHttps ? 'https' : 'http'}://${forwardedHost}`;
+  } else {
+    const host = req.headers.get('host') || 'localhost:3000';
+    const isHttps = process.env.NODE_ENV === 'production' || forwardedProto === 'https' || req.nextUrl?.protocol === 'https:';
+    redirectOrigin = `${isHttps ? 'https' : 'http'}://${host}`;
+  }
+
   const response = NextResponse.redirect(new URL('/admin', redirectOrigin));
   response.cookies.set(IMPERSONATION_COOKIE_NAME, '', {
     path: '/',

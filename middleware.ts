@@ -89,7 +89,13 @@ export async function middleware(req: NextRequest) {
     const session = token ? await verifySession(token) : null;
 
     if (!session || session.role !== 'super_admin') {
-      const directLoginUrl = new URL('/api/auth/super-admin-direct', req.url);
+      const forwardedHost = req.headers.get('x-forwarded-host');
+      const host = forwardedHost || req.headers.get('host') || 'localhost:3000';
+      const forwardedProto = req.headers.get('x-forwarded-proto');
+      const isHttps = process.env.NODE_ENV === 'production' || forwardedProto === 'https' || req.nextUrl?.protocol === 'https:' || Boolean(forwardedHost);
+      const protocol = isHttps ? 'https' : 'http';
+      const origin = `${protocol}://${host}`;
+      const directLoginUrl = new URL('/api/auth/super-admin-direct', origin);
       return NextResponse.redirect(directLoginUrl);
     }
 
