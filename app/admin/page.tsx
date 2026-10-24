@@ -313,18 +313,7 @@ export default function SuperAdminPage() {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
-          <button
-            onClick={() => {
-              setCreateOrgError(null);
-              setIsAddOrgModalOpen(true);
-            }}
-            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 active:scale-[0.98] text-slate-950 text-xs font-bold rounded-xl border border-amber-400/40 shadow-lg shadow-amber-500/20 flex items-center space-x-2 transition"
-          >
-            <Plus className="w-4 h-4 text-slate-950" />
-            <span>Create Organization</span>
-          </button>
-
+        <div className="flex items-center self-start sm:self-auto">
           <button
             onClick={fetchAdminData}
             className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700 flex items-center space-x-1.5 transition"
@@ -393,20 +382,11 @@ export default function SuperAdminPage() {
 
       {/* FEATURE 2: Super Admin – Impersonate Organization Admin Using a Dropdown */}
       <div className="bg-slate-900/80 border border-emerald-500/30 rounded-2xl p-6 space-y-6 shadow-xl relative overflow-hidden">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
-          <div>
-            <div className="flex items-center space-x-2 text-xs font-bold text-emerald-400 uppercase tracking-wider">
-              <UserCheck className="w-4 h-4" />
-              <span>Multi-Tenant Access Governance</span>
-            </div>
-            <h2 className="text-xl font-extrabold text-white tracking-tight">Impersonate Organization Admin</h2>
-            <p className="text-xs text-slate-400">
-              Select any tenant organization from the dropdown below to view administrator details and enter its Admin Dashboard with strict tenant data isolation.
-            </p>
-          </div>
-          <span className="self-start sm:self-auto px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full font-mono text-[11px] font-bold">
-            Super Admin Privilege
-          </span>
+        <div className="border-b border-slate-800/80 pb-4">
+          <h2 className="text-xl font-extrabold text-white tracking-tight">Impersonate Organization Admin</h2>
+          <p className="text-xs text-slate-400">
+            Select any organization from the dropdown below to view administrator details and enter its Admin Dashboard with strict tenant data isolation.
+          </p>
         </div>
 
         {impersonateError && (

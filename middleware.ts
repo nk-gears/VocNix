@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { verifySession, SESSION_COOKIE_NAME } from '@/lib/auth/session';
+import { verifySession, SESSION_COOKIE_NAME, IMPERSONATION_COOKIE_NAME } from '@/lib/auth/session';
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -110,6 +110,22 @@ export async function middleware(req: NextRequest) {
     if (!session) {
       const loginUrl = new URL('/admin/login', req.url);
       return NextResponse.redirect(loginUrl);
+    }
+
+    // Role-based rule: Super Admin can NEVER access /dashboard directly.
+    // The ONLY way Super Admin can access the Admin Dashboard is through the Impersonate option.
+    if (session.role === 'super_admin') {
+      const impersonateOrgId = req.cookies.get(IMPERSONATION_COOKIE_NAME)?.value;
+      const isImpersonatingQuery = req.nextUrl?.searchParams?.get('impersonate') === 'true';
+      if (!impersonateOrgId && !isImpersonatingQuery) {
+        const forwardedHost = req.headers.get('x-forwarded-host');
+        const host = forwardedHost || req.headers.get('host') || 'localhost:3000';
+        const forwardedProto = req.headers.get('x-forwarded-proto');
+        const isHttps = process.env.NODE_ENV === 'production' || forwardedProto === 'https' || req.nextUrl?.protocol === 'https:' || Boolean(forwardedHost);
+        const protocol = isHttps ? 'https' : 'http';
+        const origin = `${protocol}://${host}`;
+        return NextResponse.redirect(new URL('/admin', origin));
+      }
     }
 
     return NextResponse.next();

@@ -235,9 +235,25 @@ export default function DashboardPage() {
     fetch('/api/admin/impersonate', { cache: 'no-store' })
       .then((res) => res.json())
       .then((data) => {
-        if (isMounted && data.isImpersonating) {
+        if (!isMounted) return;
+        if (data.isImpersonating) {
           setIsImpersonating(true);
           setImpersonationData(data);
+        }
+      })
+      .catch(() => {});
+
+    // Guard: Super Admin cannot access dashboard directly; only through impersonation
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then((res) => res.json())
+      .then((authData) => {
+        if (!isMounted) return;
+        if (authData.success && authData.user?.role === 'super_admin') {
+          const hasImpersonationQuery = typeof window !== 'undefined' && window.location.search.includes('impersonate=true');
+          const hasImpersonationCookie = typeof document !== 'undefined' && document.cookie.includes('vocnix_impersonate_org');
+          if (!hasImpersonationQuery && !hasImpersonationCookie) {
+            window.location.href = '/admin';
+          }
         }
       })
       .catch(() => {});
