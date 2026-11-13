@@ -192,16 +192,10 @@ function AdminLoginForm() {
           </button>
         </form>
 
-        {/* Admin Account Creation Link */}
-        <div className="pt-4 border-t border-slate-200 dark:border-slate-800 text-center text-xs space-y-2">
-          <p className="text-slate-600 dark:text-slate-400">
-            Don&apos;t have an Admin account?{' '}
-            <Link
-              href="/admin/signup"
-              className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 font-bold hover:underline transition inline-flex items-center space-x-1"
-            >
-              <span>Create an Admin account &rarr;</span>
-            </Link>
+        {/* Admin Account Provisioning Notice */}
+        <div className="pt-4 border-t border-slate-200 dark:border-slate-800 text-center text-xs space-y-1">
+          <p className="text-slate-500 dark:text-slate-400 leading-relaxed">
+            Admin accounts are provisioned by the Super Admin once an organization account is reviewed and approved.
           </p>
         </div>
       </div>
