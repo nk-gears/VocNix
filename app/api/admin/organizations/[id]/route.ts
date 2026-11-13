@@ -59,7 +59,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     // 5. Update Organization Details / Logo
     if (action === 'update' || action === 'update_logo') {
-      const { name, admin_name, admin_email, contact_number, slug, status, plan_id, logo_url } = body;
+      const { name, admin_name, admin_email, contact_number, slug, status, plan_id, logo_url, is_demo } = body;
 
       if (name !== undefined && (!name || !name.trim())) {
         return NextResponse.json({ success: false, error: 'Organization name cannot be empty' }, { status: 400 });
@@ -96,10 +96,33 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       if (status !== undefined) updates.status = status;
       if (plan_id !== undefined) updates.plan_id = plan_id;
       if (logo_url !== undefined) updates.logo_url = logo_url.trim();
+      if (is_demo !== undefined) updates.is_demo = Boolean(is_demo);
 
       const org = await Repository.updateOrganization(params.id, updates);
       if (!org) return NextResponse.json({ success: false, error: 'Organization not found' }, { status: 404 });
       return NextResponse.json({ success: true, organization: org, message: 'Organization updated successfully' });
+    }
+
+    // 6. Reset Organization Usage
+    if (action === 'reset_usage') {
+      const result = await Repository.resetOrganizationUsage(params.id);
+      return NextResponse.json({
+        success: true,
+        message: 'Organization usage reset successfully',
+        details: result,
+      });
+    }
+
+    // 7. Toggle Demo Mode
+    if (action === 'toggle_demo') {
+      const isDemo = body.is_demo !== undefined ? Boolean(body.is_demo) : undefined;
+      const org = await Repository.toggleOrganizationDemo(params.id, isDemo);
+      if (!org) return NextResponse.json({ success: false, error: 'Org not found' }, { status: 404 });
+      return NextResponse.json({
+        success: true,
+        organization: org,
+        message: `Organization demo mode ${org.is_demo ? 'enabled (24h usage reset)' : 'disabled'}`,
+      });
     }
 
     return NextResponse.json({ success: false, error: 'Unknown Super Admin action' }, { status: 400 });

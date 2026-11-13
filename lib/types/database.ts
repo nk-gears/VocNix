@@ -63,6 +63,9 @@ export interface Organization {
   contact_number?: string;
   logo_url?: string;
   admin_user_id?: string;
+  is_demo?: boolean;
+  isDemo?: boolean;
+  last_usage_reset_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -96,6 +99,8 @@ export interface Event {
   scheduled_end?: string;
   status: EventStatus;
   public_access_token: string;
+  is_demo?: boolean;
+  isDemo?: boolean;
   created_at: string;
   updated_at: string;
 }

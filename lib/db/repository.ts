@@ -358,6 +358,26 @@ function mapPlanIdentifier(rawPlanIdOrSlug?: string | null, plans?: Plan[]): Pla
   return plans.find((p) => p.id === rawPlanIdOrSlug || p.slug === key);
 }
 
+export function isDemoOrganization(org?: Partial<Organization> | null): boolean {
+  if (!org) return false;
+  if (org.is_demo === true || (org as any).isDemo === true) return true;
+  const slug = String(org.slug || '').toLowerCase();
+  const name = String(org.name || '').toLowerCase();
+  if (slug === 'app-demo-event' || slug.includes('demo') || name.includes('demo')) {
+    return true;
+  }
+  return false;
+}
+
+export function isDemoEvent(event?: Partial<Event> | null, org?: Partial<Organization> | null): boolean {
+  if (!event) return false;
+  if (event.is_demo === true || (event as any).isDemo === true) return true;
+  const title = String(event.title || '').toLowerCase();
+  if (title.includes('demo')) return true;
+  if (org && isDemoOrganization(org)) return true;
+  return false;
+}
+
 async function fetchOrganizationAdminFromSupabase(
   admin: NonNullable<ReturnType<typeof getSupabaseAdmin>>,
   orgRow: any
@@ -531,6 +551,9 @@ export const Repository = {
             const plans = await this.getPlans();
             const resolvedPlan =
               mapPlanIdentifier((data as any).plan_slug || data.plan_id || existing?.plan_id, plans) || plans[0];
+            const isDemo = (data as any).is_demo !== undefined
+              ? Boolean((data as any).is_demo)
+              : isDemoOrganization(data);
             let hydrated: Organization = {
               ...(existing || {}),
               ...(data as Organization),
@@ -541,6 +564,9 @@ export const Repository = {
               contact_number: (data as any).contact_number || existing?.contact_number,
               admin_user_id: (data as any).admin_user_id || existing?.admin_user_id,
               logo_url: (data as any).logo_url || existing?.logo_url,
+              is_demo: isDemo,
+              isDemo: isDemo,
+              last_usage_reset_at: (data as any).last_usage_reset_at || existing?.last_usage_reset_at,
             };
 
             if (!hydrated.admin_email || !hydrated.admin_user_id || !hydrated.admin_name) {
@@ -565,7 +591,15 @@ export const Repository = {
         }
       }
     }
-    return existing || null;
+    if (existing) {
+      if (existing.is_demo === undefined) {
+        const isDemo = isDemoOrganization(existing);
+        existing.is_demo = isDemo;
+        existing.isDemo = isDemo;
+      }
+      return existing;
+    }
+    return null;
   },
 
   async getDefaultOrganization(): Promise<Organization | null> {
@@ -606,6 +640,9 @@ export const Repository = {
     const publicAccessToken = randomBytes(16).toString('hex');
     const now = new Date().toISOString();
 
+    const org = await this.getOrganization(params.organization_id);
+    const isDemo = isDemoOrganization(org) || params.title.toLowerCase().includes('demo');
+
     const event: Event = {
       id: eventId,
       organization_id: params.organization_id,
@@ -615,6 +652,8 @@ export const Repository = {
       scheduled_end: params.scheduled_end,
       status: 'scheduled',
       public_access_token: publicAccessToken,
+      is_demo: isDemo,
+      isDemo: isDemo,
       created_at: now,
       updated_at: now,
     };
@@ -683,7 +722,7 @@ export const Repository = {
       }
 
       // 2. Insert Event record
-      const { error: eventErr } = await admin.from('events').insert({
+      const baseEventInsert = {
         id: event.id,
         organization_id: event.organization_id,
         title: event.title,
@@ -694,7 +733,17 @@ export const Repository = {
         public_access_token: event.public_access_token,
         created_at: event.created_at,
         updated_at: event.updated_at,
+      };
+
+      let { error: eventErr } = await admin.from('events').insert({
+        ...baseEventInsert,
+        is_demo: isDemo,
       });
+
+      if (eventErr && isSchemaColumnError(eventErr)) {
+        const retry = await admin.from('events').insert(baseEventInsert);
+        eventErr = retry.error;
+      }
 
       if (eventErr) {
         console.error('[Repository] Supabase insert event failed:', eventErr);
@@ -1638,10 +1687,18 @@ export const Repository = {
     audienceListeningMinutes: number;
     isBroadcasting: boolean;
     activeBroadcastStartedAt: string | null;
+    isDemo: boolean;
+    lastUsageResetAt?: string;
   }> {
     const org = await this.getOrganization(organizationId);
+    const isDemo = isDemoOrganization(org);
     const plan = org?.plan_id ? store.plans.get(org.plan_id) : Array.from(store.plans.values())[0];
     const quotaMinutes = plan?.monthly_minute_quota || 120;
+
+    const now = Date.now();
+    const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
+    const resetTimeCutoff = org?.last_usage_reset_at ? new Date(org.last_usage_reset_at).getTime() : 0;
+    const demoUsageCutoff = Math.max(twentyFourHoursAgo, resetTimeCutoff);
 
     let records = Array.from(store.usageRecords.values()).filter(r => r.organization_id === organizationId);
     let liveMinutes = 0;
@@ -1656,6 +1713,22 @@ export const Repository = {
         const { data } = await admin.from('usage_records').select('*').eq('organization_id', organizationId);
         if (data && data.length > 0) {
           records = data as UsageRecord[];
+        }
+
+        // Auto-prune / reset demo records older than 24 hours in Supabase if this is a demo org
+        if (isDemo && records.length > 0) {
+          const expiredRecords = records.filter(r => new Date(r.recorded_at).getTime() < demoUsageCutoff);
+          if (expiredRecords.length > 0) {
+            const expiredIds = expiredRecords.map(r => r.id);
+            try {
+              await admin.from('usage_records').delete().in('id', expiredIds);
+              for (const expId of expiredIds) {
+                store.usageRecords.delete(expId);
+              }
+            } catch (err) {
+              console.warn('[Repository] Failed to delete expired demo usage records:', err);
+            }
+          }
         }
 
         // 2. Resolve room IDs
@@ -1674,22 +1747,33 @@ export const Repository = {
           // Check active live translator sessions
           const { data: activeSessions } = await admin
             .from('translator_sessions')
-            .select('started_at')
+            .select('id, started_at')
             .in('translation_room_id', roomIds)
             .eq('status', 'live');
 
           if (activeSessions && activeSessions.length > 0) {
-            isBroadcasting = true;
-            const now = Date.now();
             for (const s of activeSessions) {
               if (s.started_at) {
                 const sTime = new Date(s.started_at).getTime();
-                if (!activeBroadcastStartedAt || sTime < new Date(activeBroadcastStartedAt).getTime()) {
-                  activeBroadcastStartedAt = s.started_at;
-                }
                 const elapsedSec = Math.max(0, Math.floor((now - sTime) / 1000));
-                // Only count if within last 12 hours
+
+                // If demo account session is older than 4 hours, auto-close stale session
+                if (isDemo && elapsedSec > 4 * 3600) {
+                  try {
+                    await admin
+                      .from('translator_sessions')
+                      .update({ status: 'stopped', ended_at: new Date(sTime + 4 * 3600 * 1000).toISOString() })
+                      .eq('id', s.id);
+                  } catch {}
+                  continue;
+                }
+
+                // Only count active if within last 12 hours
                 if (elapsedSec < 12 * 3600) {
+                  isBroadcasting = true;
+                  if (!activeBroadcastStartedAt || sTime < new Date(activeBroadcastStartedAt).getTime()) {
+                    activeBroadcastStartedAt = s.started_at;
+                  }
                   liveMinutes += elapsedSec / 60;
                 }
               }
@@ -1703,11 +1787,11 @@ export const Repository = {
             .in('translation_room_id', roomIds);
 
           if (audSessions && audSessions.length > 0) {
-            const now = Date.now();
             let totalAudienceSecs = 0;
             for (const a of audSessions) {
               if (a.joined_at) {
                 const start = new Date(a.joined_at).getTime();
+                if (isDemo && start < demoUsageCutoff) continue;
                 const end = a.left_at ? new Date(a.left_at).getTime() : now;
                 const dur = Math.max(0, Math.floor((end - start) / 1000));
                 if (dur < 24 * 3600) {
@@ -1721,20 +1805,29 @@ export const Repository = {
       }
     }
 
+    // Filter records for demo organizations (24-hour rolling window or since last reset)
+    if (isDemo) {
+      records = records.filter(r => new Date(r.recorded_at).getTime() >= demoUsageCutoff);
+    }
+
     // Check memory store fallback
     const memoryActive = Array.from(store.translatorSessions.values()).filter(s => s.status === 'live');
     if (memoryActive.length > 0) {
-      isBroadcasting = true;
-      const now = Date.now();
       for (const s of memoryActive) {
         if (s.started_at) {
           const sTime = new Date(s.started_at).getTime();
-          if (!activeBroadcastStartedAt || sTime < new Date(activeBroadcastStartedAt).getTime()) {
-            activeBroadcastStartedAt = s.started_at;
+          const elapsedSec = Math.max(0, Math.floor((now - sTime) / 1000));
+          if (isDemo && elapsedSec > 4 * 3600) {
+            s.status = 'stopped';
+            s.ended_at = new Date(sTime + 4 * 3600 * 1000).toISOString();
+            continue;
           }
-          if (liveMinutes === 0) {
-            const elapsedSec = Math.max(0, Math.floor((now - sTime) / 1000));
-            if (elapsedSec < 12 * 3600) {
+          if (elapsedSec < 12 * 3600) {
+            isBroadcasting = true;
+            if (!activeBroadcastStartedAt || sTime < new Date(activeBroadcastStartedAt).getTime()) {
+              activeBroadcastStartedAt = s.started_at;
+            }
+            if (liveMinutes === 0) {
               liveMinutes += elapsedSec / 60;
             }
           }
@@ -1752,11 +1845,13 @@ export const Repository = {
       quotaMinutes,
       remainingMinutes,
       isLimitExceeded,
-      planName: plan?.name || 'Free',
+      planName: isDemo ? `${plan?.name || 'Free'} (Demo - 24h Reset)` : (plan?.name || 'Free'),
       liveMinutes: Number(liveMinutes.toFixed(2)),
       audienceListeningMinutes,
       isBroadcasting,
       activeBroadcastStartedAt,
+      isDemo,
+      lastUsageResetAt: org?.last_usage_reset_at,
     };
   },
 
@@ -1824,6 +1919,8 @@ export const Repository = {
       isBroadcasting,
       activeBroadcastStartedAt,
       roomListenerCounts,
+      isDemo: usage.isDemo,
+      lastUsageResetAt: usage.lastUsageResetAt,
     };
   },
 
@@ -1838,6 +1935,9 @@ export const Repository = {
     logo_url: string;
     status: OrgStatus;
     plan_id: string;
+    is_demo: boolean;
+    isDemo: boolean;
+    last_usage_reset_at: string;
   }>): Promise<Organization | null> {
     const now = new Date().toISOString();
     const org = store.organizations.get(orgId) || (await this.getOrganization(orgId));
@@ -1850,6 +1950,16 @@ export const Repository = {
     if (updates.contact_number !== undefined) org.contact_number = updates.contact_number.trim();
     if (updates.logo_url !== undefined) org.logo_url = updates.logo_url.trim();
     if (updates.status !== undefined) org.status = updates.status;
+    if (updates.is_demo !== undefined) {
+      org.is_demo = updates.is_demo;
+      org.isDemo = updates.is_demo;
+    } else if (updates.isDemo !== undefined) {
+      org.is_demo = updates.isDemo;
+      org.isDemo = updates.isDemo;
+    }
+    if (updates.last_usage_reset_at !== undefined) {
+      org.last_usage_reset_at = updates.last_usage_reset_at;
+    }
 
     if (updates.plan_id !== undefined) {
       const plans = await this.getPlans();
@@ -1898,6 +2008,8 @@ export const Repository = {
           ...(org.contact_number !== undefined ? { contact_number: org.contact_number } : {}),
           ...(org.admin_user_id !== undefined ? { admin_user_id: org.admin_user_id } : {}),
           ...(org.plan_slug !== undefined ? { plan_slug: org.plan_slug } : {}),
+          ...(org.is_demo !== undefined ? { is_demo: org.is_demo } : {}),
+          ...(org.last_usage_reset_at !== undefined ? { last_usage_reset_at: org.last_usage_reset_at } : {}),
         };
 
         let { data, error } = await admin
@@ -1908,7 +2020,7 @@ export const Repository = {
           .single();
 
         if (error && isSchemaColumnError(error)) {
-          console.warn('[Repository] updateOrganization falling back to base columns (run migration 005):', error.message);
+          console.warn('[Repository] updateOrganization falling back to base columns (run migration 005/006):', error.message);
           const fallbackRes = await admin
             .from('organizations')
             .update(basePayload)
@@ -1927,6 +2039,9 @@ export const Repository = {
             admin_email: (data as any).admin_email || org.admin_email,
             contact_number: (data as any).contact_number || org.contact_number,
             admin_user_id: (data as any).admin_user_id || org.admin_user_id,
+            is_demo: (data as any).is_demo !== undefined ? (data as any).is_demo : org.is_demo,
+            isDemo: (data as any).is_demo !== undefined ? (data as any).is_demo : org.is_demo,
+            last_usage_reset_at: (data as any).last_usage_reset_at || org.last_usage_reset_at,
           });
         }
 
@@ -2525,6 +2640,8 @@ export const Repository = {
     logo_url?: string;
     status?: OrgStatus;
     plan_id?: string;
+    is_demo?: boolean;
+    isDemo?: boolean;
   }): Promise<{ organization: Organization; adminUser?: Profile | null }> {
     syncStoreFromDiskIfNeeded(store);
     const rawName = params.name ? params.name.trim() : '';
@@ -2610,6 +2727,12 @@ export const Repository = {
       contactNumber: params.contact_number,
     });
 
+    const isDemo = Boolean(
+      params.is_demo ??
+      params.isDemo ??
+      (finalSlug === 'app-demo-event' || finalSlug.includes('demo') || rawName.toLowerCase().includes('demo'))
+    );
+
     const newOrg: Organization = {
       id: orgId,
       name: rawName,
@@ -2623,6 +2746,9 @@ export const Repository = {
       contact_number: params.contact_number?.trim() || undefined,
       logo_url: params.logo_url?.trim() || undefined,
       admin_user_id: adminProfile.id,
+      is_demo: isDemo,
+      isDemo: isDemo,
+      last_usage_reset_at: now,
       created_at: now,
       updated_at: now,
     };
@@ -2648,6 +2774,8 @@ export const Repository = {
             admin_user_id: newOrg.admin_user_id,
             plan_slug: newOrg.plan_slug,
             trial_ends_at: newOrg.trial_ends_at,
+            is_demo: newOrg.is_demo,
+            last_usage_reset_at: newOrg.last_usage_reset_at,
           };
 
           let { data, error } = await admin
@@ -2657,7 +2785,7 @@ export const Repository = {
             .single();
 
           if (error && isSchemaColumnError(error)) {
-            console.warn('[Repository] createOrganization falling back to base columns (run migration 005):', error.message);
+            console.warn('[Repository] createOrganization falling back to base columns (run migration 005/006):', error.message);
             const fallbackRes = await admin
               .from('organizations')
               .insert(baseInsert)
@@ -2690,6 +2818,9 @@ export const Repository = {
               contact_number: (data as any).contact_number || newOrg.contact_number,
               admin_user_id: (data as any).admin_user_id || newOrg.admin_user_id,
               logo_url: newOrg.logo_url || data.logo_url,
+              is_demo: (data as any).is_demo !== undefined ? (data as any).is_demo : newOrg.is_demo,
+              isDemo: (data as any).is_demo !== undefined ? (data as any).is_demo : newOrg.is_demo,
+              last_usage_reset_at: (data as any).last_usage_reset_at || newOrg.last_usage_reset_at,
             };
             store.organizations.set(data.id, hydratedOrg);
             persistStoreToDisk(store);
@@ -2871,8 +3002,39 @@ export const Repository = {
             admin.from('organization_members').select('organization_id, profile_id, role').in('role', ['admin', 'owner']),
             admin.from('profiles').select('*'),
             admin.from('events').select('id, organization_id'),
-            admin.from('usage_records').select('organization_id, minutes_used'),
+            admin.from('usage_records').select('organization_id, minutes_used, recorded_at'),
           ]);
+
+          if (orgsRes.status === 'fulfilled' && !orgsRes.value.error && orgsRes.value.data) {
+            const data = orgsRes.value.data;
+            const dbIds = new Set(data.map((o: any) => o.id));
+            for (const [id] of Array.from(store.organizations.entries())) {
+              if (!dbIds.has(id)) {
+                store.organizations.delete(id);
+              }
+            }
+            for (const o of data) {
+              const existing = store.organizations.get(o.id);
+              const resolvedPlan =
+                mapPlanIdentifier((o as any).plan_slug || o.plan_id || existing?.plan_id, plans) || plans[0];
+              const isDemo = (o as any).is_demo !== undefined ? Boolean((o as any).is_demo) : isDemoOrganization(o);
+              store.organizations.set(o.id, {
+                ...(existing || {}),
+                ...o,
+                plan_id: resolvedPlan.id,
+                plan_slug: (o as any).plan_slug || resolvedPlan.slug,
+                admin_name: (o as any).admin_name || existing?.admin_name,
+                admin_email: (o as any).admin_email || existing?.admin_email,
+                contact_number: (o as any).contact_number || existing?.contact_number,
+                logo_url: (o as any).logo_url || existing?.logo_url,
+                admin_user_id: (o as any).admin_user_id || existing?.admin_user_id,
+                trial_ends_at: (o as any).trial_ends_at || existing?.trial_ends_at,
+                is_demo: isDemo,
+                isDemo: isDemo,
+                last_usage_reset_at: (o as any).last_usage_reset_at || existing?.last_usage_reset_at,
+              } as Organization);
+            }
+          }
 
           if (profilesRes.status === 'fulfilled' && !profilesRes.value.error && profilesRes.value.data) {
             for (const p of profilesRes.value.data) {
@@ -2900,39 +3062,22 @@ export const Repository = {
           }
 
           if (usageRes.status === 'fulfilled' && !usageRes.value.error && usageRes.value.data) {
+            const now = Date.now();
+            const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
             for (const u of usageRes.value.data) {
               if (!u.organization_id) continue;
+              const org = store.organizations.get(u.organization_id);
+              const isDemo = isDemoOrganization(org);
+              if (isDemo && u.recorded_at) {
+                const recTime = new Date(u.recorded_at).getTime();
+                const resetCutoff = org?.last_usage_reset_at ? new Date(org.last_usage_reset_at).getTime() : 0;
+                const cutoff = Math.max(twentyFourHoursAgo, resetCutoff);
+                if (recTime < cutoff) continue;
+              }
               remoteUsageByOrg.set(
                 u.organization_id,
                 (remoteUsageByOrg.get(u.organization_id) || 0) + Number(u.minutes_used || 0)
               );
-            }
-          }
-
-          if (orgsRes.status === 'fulfilled' && !orgsRes.value.error && orgsRes.value.data) {
-            const data = orgsRes.value.data;
-            const dbIds = new Set(data.map((o: any) => o.id));
-            for (const [id] of Array.from(store.organizations.entries())) {
-              if (!dbIds.has(id)) {
-                store.organizations.delete(id);
-              }
-            }
-            for (const o of data) {
-              const existing = store.organizations.get(o.id);
-              const resolvedPlan =
-                mapPlanIdentifier((o as any).plan_slug || o.plan_id || existing?.plan_id, plans) || plans[0];
-              store.organizations.set(o.id, {
-                ...(existing || {}),
-                ...o,
-                plan_id: resolvedPlan.id,
-                plan_slug: (o as any).plan_slug || resolvedPlan.slug,
-                admin_name: (o as any).admin_name || existing?.admin_name,
-                admin_email: (o as any).admin_email || existing?.admin_email,
-                contact_number: (o as any).contact_number || existing?.contact_number,
-                logo_url: (o as any).logo_url || existing?.logo_url,
-                admin_user_id: (o as any).admin_user_id || existing?.admin_user_id,
-                trial_ends_at: (o as any).trial_ends_at || existing?.trial_ends_at,
-              } as Organization);
             }
           }
         } catch (err) {
@@ -2950,8 +3095,14 @@ export const Repository = {
         if (e.organization_id === org.id) eventIds.add(e.id);
       }
 
+      const isDemo = isDemoOrganization(org);
+      const now = Date.now();
+      const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
+      const resetCutoff = org.last_usage_reset_at ? new Date(org.last_usage_reset_at).getTime() : 0;
+      const demoCutoff = Math.max(twentyFourHoursAgo, resetCutoff);
+
       const localUsage = Array.from(store.usageRecords.values())
-        .filter(u => u.organization_id === org.id)
+        .filter(u => u.organization_id === org.id && (!isDemo || new Date(u.recorded_at).getTime() >= demoCutoff))
         .reduce((sum, u) => sum + Number(u.minutes_used), 0);
       const orgUsage = Math.max(localUsage, remoteUsageByOrg.get(org.id) || 0);
 
@@ -3032,6 +3183,9 @@ export const Repository = {
         usedMinutes: Number(orgUsage.toFixed(2)),
         quotaMinutes: plan?.monthly_minute_quota || 120,
         trialEndsAt: org.trial_ends_at || new Date(Date.now() + 30 * 86400000).toISOString(),
+        is_demo: isDemo,
+        isDemo: isDemo,
+        last_usage_reset_at: org.last_usage_reset_at,
       };
     });
   },
@@ -3090,6 +3244,174 @@ export const Repository = {
     }
     await this.logActivity(orgId, 'TRIAL_EXTENDED', `Super Admin extended trial for "${org.name}" by ${days} days`);
     return { org, newTrialEnd: newEnd };
+  },
+
+  async resetOrganizationUsage(orgId: string): Promise<{ success: boolean; deletedCount: number; message: string }> {
+    const now = new Date().toISOString();
+    const org = (await this.getOrganization(orgId)) || store.organizations.get(orgId);
+    let deletedCount = 0;
+
+    // 1. Memory store cleanup
+    for (const [id, r] of Array.from(store.usageRecords.entries())) {
+      if (r.organization_id === orgId) {
+        store.usageRecords.delete(id);
+        deletedCount++;
+      }
+    }
+
+    // 2. End any stuck live sessions for this org
+    for (const s of store.translatorSessions.values()) {
+      if (s.status === 'live') {
+        const room = store.translationRooms.get(s.translation_room_id);
+        const event = room ? store.events.get(room.event_id) : null;
+        if (event && event.organization_id === orgId) {
+          s.status = 'stopped';
+          s.ended_at = now;
+        }
+      }
+    }
+
+    // 3. Supabase cleanup
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        try {
+          const { data } = await admin.from('usage_records').delete().eq('organization_id', orgId).select('id');
+          if (data && data.length > 0) {
+            deletedCount = Math.max(deletedCount, data.length);
+          }
+
+          // Try updating last_usage_reset_at
+          try {
+            await admin.from('organizations').update({ last_usage_reset_at: now, updated_at: now }).eq('id', orgId);
+          } catch (err: any) {
+            if (!isSchemaColumnError(err)) {
+              console.warn('[Repository] Failed to update last_usage_reset_at:', err);
+            }
+          }
+
+          // Close active live sessions for rooms belonging to this org
+          const { data: orgEvents } = await admin.from('events').select('id').eq('organization_id', orgId);
+          const eventIds = (orgEvents || []).map((e: any) => e.id);
+          if (eventIds.length > 0) {
+            const { data: orgRooms } = await admin.from('translation_rooms').select('id').in('event_id', eventIds);
+            const roomIds = (orgRooms || []).map((r: any) => r.id);
+            if (roomIds.length > 0) {
+              await admin
+                .from('translator_sessions')
+                .update({ status: 'stopped', ended_at: now })
+                .in('translation_room_id', roomIds)
+                .eq('status', 'live');
+            }
+          }
+        } catch (err) {
+          console.warn('[Repository] Supabase resetOrganizationUsage error:', err);
+        }
+      }
+    }
+
+    if (org) {
+      org.last_usage_reset_at = now;
+      store.organizations.set(orgId, org);
+      persistStoreToDisk(store);
+      await this.logActivity(orgId, 'USAGE_RESET', `Usage reset executed for "${org.name}"`);
+    }
+
+    return {
+      success: true,
+      deletedCount,
+      message: `Usage successfully reset for organization ${org?.name || orgId}`,
+    };
+  },
+
+  async resetAllDemoOrganizationsUsage(): Promise<{
+    success: boolean;
+    resetOrganizations: string[];
+    deletedUsageRecordsCount: number;
+    timestamp: string;
+  }> {
+    const now = new Date().toISOString();
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const resetOrgIds: string[] = [];
+    let totalDeleted = 0;
+
+    const orgs = await this.getAllOrganizations();
+    const demoOrgs = orgs.filter(o => isDemoOrganization(o));
+
+    for (const demoOrg of demoOrgs) {
+      resetOrgIds.push(demoOrg.id);
+    }
+
+    const demoOrgBySlug = Array.from(store.organizations.values()).find(o => isDemoOrganization(o));
+    if (demoOrgBySlug && !resetOrgIds.includes(demoOrgBySlug.id)) {
+      resetOrgIds.push(demoOrgBySlug.id);
+    }
+
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin && resetOrgIds.length > 0) {
+        try {
+          const { data } = await admin
+            .from('usage_records')
+            .delete()
+            .in('organization_id', resetOrgIds)
+            .lt('recorded_at', twentyFourHoursAgo)
+            .select('id');
+
+          if (data) {
+            totalDeleted += data.length;
+          }
+
+          try {
+            await admin
+              .from('organizations')
+              .update({ last_usage_reset_at: now, updated_at: now })
+              .in('id', resetOrgIds);
+          } catch (err: any) {
+            if (!isSchemaColumnError(err)) {
+              console.warn('[Repository] resetAllDemoOrganizationsUsage update timestamp warning:', err);
+            }
+          }
+        } catch (err) {
+          console.warn('[Repository] resetAllDemoOrganizationsUsage supabase error:', err);
+        }
+      }
+    }
+
+    const cutoffMs = Date.now() - 24 * 60 * 60 * 1000;
+    for (const [id, r] of Array.from(store.usageRecords.entries())) {
+      if (resetOrgIds.includes(r.organization_id)) {
+        if (new Date(r.recorded_at).getTime() < cutoffMs) {
+          store.usageRecords.delete(id);
+          totalDeleted++;
+        }
+      }
+    }
+
+    for (const orgId of resetOrgIds) {
+      const org = store.organizations.get(orgId);
+      if (org) {
+        org.last_usage_reset_at = now;
+      }
+    }
+    persistStoreToDisk(store);
+
+    return {
+      success: true,
+      resetOrganizations: resetOrgIds,
+      deletedUsageRecordsCount: totalDeleted,
+      timestamp: now,
+    };
+  },
+
+  async toggleOrganizationDemo(orgId: string, isDemo?: boolean): Promise<Organization | null> {
+    const org = await this.getOrganization(orgId);
+    if (!org) return null;
+    const targetDemo = isDemo !== undefined ? isDemo : !isDemoOrganization(org);
+    return this.updateOrganization(orgId, {
+      is_demo: targetDemo,
+      isDemo: targetDemo,
+    });
   },
 
   async getPlatformOverview(): Promise<{

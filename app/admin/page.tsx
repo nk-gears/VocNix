@@ -31,6 +31,7 @@ import {
   Shield,
   Check,
   Pencil,
+  RotateCcw,
 } from 'lucide-react';
 
 
@@ -98,6 +99,7 @@ export default function SuperAdminPage() {
   const [editOrgPlanId, setEditOrgPlanId] = useState('');
   const [editOrgLogoPreview, setEditOrgLogoPreview] = useState<string | null>(null);
   const [editOrgLogoFile, setEditOrgLogoFile] = useState<File | null>(null);
+  const [editOrgIsDemo, setEditOrgIsDemo] = useState(false);
   const [isUpdatingOrg, setIsUpdatingOrg] = useState(false);
   const [editOrgError, setEditOrgError] = useState<string | null>(null);
   const editOrgModalRef = useRef<HTMLDivElement>(null);
@@ -122,6 +124,7 @@ export default function SuperAdminPage() {
     setEditOrgPlanId(org.plan_id || (plans[0]?.id || ''));
     setEditOrgLogoPreview(org.logo_url || null);
     setEditOrgLogoFile(null);
+    setEditOrgIsDemo(Boolean(org.is_demo));
     setEditOrgError(null);
   };
 
@@ -195,6 +198,7 @@ export default function SuperAdminPage() {
           status: editOrgStatus,
           plan_id: editOrgPlanId,
           logo_url: finalLogoUrl,
+          is_demo: editOrgIsDemo,
         }),
       });
 
@@ -581,6 +585,28 @@ export default function SuperAdminPage() {
     }
   };
 
+  // 7. RESET 24H USAGE
+  const handleResetUsage = async (orgId: string, orgName: string) => {
+    if (!confirm(`Are you sure you want to reset usage for "${orgName}"? Platform minutes will reset to 0.`)) return;
+    setUpdatingOrgId(orgId);
+    try {
+      const res = await fetch(`/api/admin/organizations/${orgId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reset_usage' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(data.message || 'Usage reset successfully');
+        fetchAdminData();
+      } else alert(data.error);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setUpdatingOrgId(null);
+    }
+  };
+
   const filteredOrgs = organizations.filter(
     (o) =>
       o.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -787,6 +813,11 @@ export default function SuperAdminPage() {
                         <div>
                           <div className="flex items-center space-x-2">
                             <div className="font-bold text-white text-sm">{org.name}</div>
+                            {org.is_demo && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                DEMO (24h)
+                              </span>
+                            )}
                             <button
                               type="button"
                               onClick={() => handleOpenEditOrgModal(org)}
@@ -845,8 +876,15 @@ export default function SuperAdminPage() {
                     </td>
 
                     <td>
-                      <div className="font-mono text-slate-200 font-bold">
-                        {org.usedMinutes}m / {org.quotaMinutes}m
+                      <div className="flex items-center space-x-1.5">
+                        <span className="font-mono text-slate-200 font-bold">
+                          {org.usedMinutes}m / {org.quotaMinutes}m
+                        </span>
+                        {org.is_demo && (
+                          <span className="text-[10px] text-amber-400 font-semibold" title="24-Hour Rolling Reset Window">
+                            ⚡24h
+                          </span>
+                        )}
                       </div>
                       <div className="w-24 h-1 bg-slate-800 rounded-full mt-1 overflow-hidden">
                         <div
@@ -897,6 +935,16 @@ export default function SuperAdminPage() {
                           className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 transition"
                         >
                           +30d
+                        </button>
+
+                        {/* Reset Usage */}
+                        <button
+                          onClick={() => handleResetUsage(org.id, org.name)}
+                          disabled={updatingOrgId === org.id}
+                          title="Reset usage minutes to 0 (24h Daily Reset)"
+                          className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-amber-400 rounded-lg border border-slate-700 transition flex items-center justify-center cursor-pointer"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
                         </button>
 
                         {/* Suspend or Reactivate */}
@@ -1482,6 +1530,28 @@ export default function SuperAdminPage() {
                     <span className="absolute right-3.5 top-3 text-[10px] text-slate-500 font-mono select-none">
                       .vocnix.com
                     </span>
+                  </div>
+                </div>
+
+                {/* 7. 24-Hour Demo Mode Toggle */}
+                <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 flex items-start space-x-3">
+                  <input
+                    type="checkbox"
+                    id="edit-org-is-demo"
+                    checked={editOrgIsDemo}
+                    onChange={(e) => setEditOrgIsDemo(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-amber-500 cursor-pointer"
+                  />
+                  <div className="space-y-0.5">
+                    <label htmlFor="edit-org-is-demo" className="font-semibold text-slate-200 cursor-pointer flex items-center space-x-2">
+                      <span>24-Hour Demo Account</span>
+                      <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        24h Daily Reset
+                      </span>
+                    </label>
+                    <p className="text-[11px] text-slate-400">
+                      When enabled, broadcast minutes and platform quota automatically reset every 24 hours so organizers can test events without reaching permanent limit caps.
+                    </p>
                   </div>
                 </div>
               </div>

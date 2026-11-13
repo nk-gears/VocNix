@@ -974,7 +974,14 @@ export default function DashboardPage() {
         {/* Usage & Quota */}
         <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-2xl space-y-2">
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Translation Minutes</span>
+            <span className="flex items-center space-x-2">
+              <span>Translation Minutes</span>
+              {stats?.isDemo && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase tracking-wider">
+                  24h Demo
+                </span>
+              )}
+            </span>
             <Clock className="w-4 h-4 text-amber-400" />
           </div>
           <div className="text-3xl font-black text-white">
@@ -996,7 +1003,7 @@ export default function DashboardPage() {
                 ? `${stats.liveMinutes}m active`
                 : 'Idle'}
             </span>
-            <span>Audience: {stats?.audienceListeningMinutes || 0}m</span>
+            <span>{stats?.isDemo ? 'Resets every 24h' : `Audience: ${stats?.audienceListeningMinutes || 0}m`}</span>
           </div>
         </div>
       </div>
