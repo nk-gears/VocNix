@@ -58,6 +58,7 @@ export default function SuperAdminPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [updatingOrgId, setUpdatingOrgId] = useState<string | null>(null);
+  const [isResettingAllDemos, setIsResettingAllDemos] = useState(false);
 
   // Impersonate Feature State
   const [selectedImpersonateOrgId, setSelectedImpersonateOrgId] = useState<string>('');
@@ -585,9 +586,9 @@ export default function SuperAdminPage() {
     }
   };
 
-  // 7. RESET 24H USAGE
+  // 7. RESET USAGE FOR ANY ORGANIZATION (EXPLICIT SUPER ADMIN ACTION)
   const handleResetUsage = async (orgId: string, orgName: string) => {
-    if (!confirm(`Are you sure you want to reset usage for "${orgName}"? Platform minutes will reset to 0.`)) return;
+    if (!confirm(`Are you sure you want to reset platform usage for "${orgName}"?\n\nThis will immediately reset recorded broadcast minutes back to 0.00 and unblock any exceeded quota limits.`)) return;
     setUpdatingOrgId(orgId);
     try {
       const res = await fetch(`/api/admin/organizations/${orgId}`, {
@@ -597,13 +598,31 @@ export default function SuperAdminPage() {
       });
       const data = await res.json();
       if (data.success) {
-        alert(data.message || 'Usage reset successfully');
+        alert(data.message || `Usage for "${orgName}" has been successfully reset to 0m.`);
         fetchAdminData();
       } else alert(data.error);
     } catch (err: any) {
       alert(err.message);
     } finally {
       setUpdatingOrgId(null);
+    }
+  };
+
+  // 8. RESET ALL DEMO ACCOUNTS
+  const handleResetAllDemos = async () => {
+    if (!confirm('Are you sure you want to run a 24-hour reset for all demo accounts right now?')) return;
+    setIsResettingAllDemos(true);
+    try {
+      const res = await fetch('/api/cron/reset-demo-usage', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        alert(data.message || 'Demo accounts usage successfully reset');
+        fetchAdminData();
+      } else alert(data.error);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setIsResettingAllDemos(false);
     }
   };
 
@@ -768,8 +787,19 @@ export default function SuperAdminPage() {
             </div>
 
             <button
+              type="button"
+              onClick={handleResetAllDemos}
+              disabled={isResettingAllDemos}
+              title="Reset usage for all 24h demo accounts immediately"
+              className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-amber-400 font-semibold text-xs rounded-xl border border-amber-500/30 flex items-center space-x-1.5 transition whitespace-nowrap cursor-pointer shadow-sm"
+            >
+              <RotateCcw className={`w-3.5 h-3.5 ${isResettingAllDemos ? 'animate-spin' : ''}`} />
+              <span>Reset Demo Accounts</span>
+            </button>
+
+            <button
               onClick={handleOpenCreateOrgModal}
-              className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 active:scale-[0.98] text-slate-950 font-bold text-xs rounded-xl flex items-center space-x-1.5 transition shadow-lg shadow-amber-500/20 whitespace-nowrap"
+              className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 active:scale-[0.98] text-slate-950 font-bold text-xs rounded-xl flex items-center space-x-1.5 transition shadow-lg shadow-amber-500/20 whitespace-nowrap cursor-pointer"
             >
               <Plus className="w-4 h-4 text-slate-950" />
               <span>Create Organization</span>
@@ -880,17 +910,33 @@ export default function SuperAdminPage() {
                         <span className="font-mono text-slate-200 font-bold">
                           {org.usedMinutes}m / {org.quotaMinutes}m
                         </span>
-                        {org.is_demo && (
+                        {org.usedMinutes >= org.quotaMinutes ? (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">
+                            Exceeded
+                          </span>
+                        ) : org.is_demo ? (
                           <span className="text-[10px] text-amber-400 font-semibold" title="24-Hour Rolling Reset Window">
                             ⚡24h
                           </span>
-                        )}
+                        ) : null}
                       </div>
                       <div className="w-24 h-1 bg-slate-800 rounded-full mt-1 overflow-hidden">
                         <div
-                          className={`h-full ${usagePercent > 90 ? 'bg-red-500' : 'bg-amber-400'}`}
+                          className={`h-full ${usagePercent >= 100 ? 'bg-red-500' : usagePercent > 80 ? 'bg-amber-400' : 'bg-emerald-500'}`}
                           style={{ width: `${usagePercent}%` }}
                         />
+                      </div>
+                      <div className="mt-1">
+                        <button
+                          type="button"
+                          onClick={() => handleResetUsage(org.id, org.name)}
+                          disabled={updatingOrgId === org.id}
+                          title={`Reset ${org.name} usage to 0m`}
+                          className="inline-flex items-center space-x-1 text-[10px] font-semibold text-amber-400 hover:text-amber-300 hover:underline cursor-pointer"
+                        >
+                          <RotateCcw className="w-2.5 h-2.5" />
+                          <span>Reset to 0m</span>
+                        </button>
                       </div>
                     </td>
 
@@ -937,14 +983,19 @@ export default function SuperAdminPage() {
                           +30d
                         </button>
 
-                        {/* Reset Usage */}
+                        {/* Explicit Reset Usage Button */}
                         <button
                           onClick={() => handleResetUsage(org.id, org.name)}
                           disabled={updatingOrgId === org.id}
-                          title="Reset usage minutes to 0 (24h Daily Reset)"
-                          className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-amber-400 rounded-lg border border-slate-700 transition flex items-center justify-center cursor-pointer"
+                          title={`Explicitly reset recorded usage for ${org.name} to 0m`}
+                          className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition flex items-center space-x-1 cursor-pointer ${
+                            org.usedMinutes >= org.quotaMinutes
+                              ? 'bg-red-500/20 hover:bg-red-500/30 text-red-300 border-red-500/50 shadow-sm shadow-red-500/20 animate-pulse'
+                              : 'bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 border-slate-700'
+                          }`}
                         >
                           <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Reset Usage</span>
                         </button>
 
                         {/* Suspend or Reactivate */}
@@ -1331,6 +1382,40 @@ export default function SuperAdminPage() {
 
             <form onSubmit={handleUpdateOrg} className="flex flex-col flex-1 min-h-0 overflow-hidden">
               <div className="space-y-4 text-xs overflow-y-auto px-5 sm:px-6 py-4 flex-1 overscroll-contain">
+                {/* Platform Usage & Explicit Super Admin Reset */}
+                <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-inner">
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-semibold text-slate-200 flex items-center space-x-2">
+                      <span>Platform Usage:</span>
+                      <span className="font-mono text-amber-400 font-bold">
+                        {editingOrg.usedMinutes || 0}m / {editingOrg.quotaMinutes || 120}m
+                      </span>
+                      {editingOrg.usedMinutes >= (editingOrg.quotaMinutes || 120) ? (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-red-500/20 text-red-400 border border-red-500/30">
+                          Limit Exceeded
+                        </span>
+                      ) : (
+                        <span className="text-emerald-400 font-mono text-[10px]">
+                          ({Math.max(0, (editingOrg.quotaMinutes || 120) - (editingOrg.usedMinutes || 0)).toFixed(1)}m remaining)
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Super Admin can manually reset recorded minutes back to 0.00 to immediately unblock limits.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleResetUsage(editingOrg.id, editingOrg.name)}
+                    disabled={updatingOrgId === editingOrg.id}
+                    title={`Reset usage for ${editingOrg.name} to 0m`}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 flex items-center space-x-1.5 cursor-pointer transition shrink-0 active:scale-95"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Reset Usage to 0</span>
+                  </button>
+                </div>
+
                 {/* Organization Logo */}
                 <div className="space-y-1.5 p-3 rounded-xl bg-slate-950/60 border border-slate-800/80">
                   <label className="font-semibold text-slate-300 flex items-center justify-between">

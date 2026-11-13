@@ -1698,7 +1698,7 @@ export const Repository = {
     const now = Date.now();
     const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
     const resetTimeCutoff = org?.last_usage_reset_at ? new Date(org.last_usage_reset_at).getTime() : 0;
-    const demoUsageCutoff = Math.max(twentyFourHoursAgo, resetTimeCutoff);
+    const effectiveUsageCutoff = isDemo ? Math.max(twentyFourHoursAgo, resetTimeCutoff) : resetTimeCutoff;
 
     let records = Array.from(store.usageRecords.values()).filter(r => r.organization_id === organizationId);
     let liveMinutes = 0;
@@ -1715,9 +1715,9 @@ export const Repository = {
           records = data as UsageRecord[];
         }
 
-        // Auto-prune / reset demo records older than 24 hours in Supabase if this is a demo org
-        if (isDemo && records.length > 0) {
-          const expiredRecords = records.filter(r => new Date(r.recorded_at).getTime() < demoUsageCutoff);
+        // Auto-prune records older than effectiveUsageCutoff (rolling 24h for demos, or prior to manual reset)
+        if (effectiveUsageCutoff > 0 && records.length > 0) {
+          const expiredRecords = records.filter(r => new Date(r.recorded_at).getTime() < effectiveUsageCutoff);
           if (expiredRecords.length > 0) {
             const expiredIds = expiredRecords.map(r => r.id);
             try {
@@ -1726,7 +1726,7 @@ export const Repository = {
                 store.usageRecords.delete(expId);
               }
             } catch (err) {
-              console.warn('[Repository] Failed to delete expired demo usage records:', err);
+              console.warn('[Repository] Failed to delete expired usage records:', err);
             }
           }
         }
@@ -1791,7 +1791,7 @@ export const Repository = {
             for (const a of audSessions) {
               if (a.joined_at) {
                 const start = new Date(a.joined_at).getTime();
-                if (isDemo && start < demoUsageCutoff) continue;
+                if (effectiveUsageCutoff > 0 && start < effectiveUsageCutoff) continue;
                 const end = a.left_at ? new Date(a.left_at).getTime() : now;
                 const dur = Math.max(0, Math.floor((end - start) / 1000));
                 if (dur < 24 * 3600) {
@@ -1805,9 +1805,9 @@ export const Repository = {
       }
     }
 
-    // Filter records for demo organizations (24-hour rolling window or since last reset)
-    if (isDemo) {
-      records = records.filter(r => new Date(r.recorded_at).getTime() >= demoUsageCutoff);
+    // Filter records by effectiveUsageCutoff (24-hour rolling window for demos, or since last manual reset)
+    if (effectiveUsageCutoff > 0) {
+      records = records.filter(r => new Date(r.recorded_at).getTime() >= effectiveUsageCutoff);
     }
 
     // Check memory store fallback
@@ -3068,11 +3068,11 @@ export const Repository = {
               if (!u.organization_id) continue;
               const org = store.organizations.get(u.organization_id);
               const isDemo = isDemoOrganization(org);
-              if (isDemo && u.recorded_at) {
+              const resetCutoff = org?.last_usage_reset_at ? new Date(org.last_usage_reset_at).getTime() : 0;
+              const effectiveCutoff = isDemo ? Math.max(twentyFourHoursAgo, resetCutoff) : resetCutoff;
+              if (effectiveCutoff > 0 && u.recorded_at) {
                 const recTime = new Date(u.recorded_at).getTime();
-                const resetCutoff = org?.last_usage_reset_at ? new Date(org.last_usage_reset_at).getTime() : 0;
-                const cutoff = Math.max(twentyFourHoursAgo, resetCutoff);
-                if (recTime < cutoff) continue;
+                if (recTime < effectiveCutoff) continue;
               }
               remoteUsageByOrg.set(
                 u.organization_id,
@@ -3099,10 +3099,10 @@ export const Repository = {
       const now = Date.now();
       const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
       const resetCutoff = org.last_usage_reset_at ? new Date(org.last_usage_reset_at).getTime() : 0;
-      const demoCutoff = Math.max(twentyFourHoursAgo, resetCutoff);
+      const effectiveCutoff = isDemo ? Math.max(twentyFourHoursAgo, resetCutoff) : resetCutoff;
 
       const localUsage = Array.from(store.usageRecords.values())
-        .filter(u => u.organization_id === org.id && (!isDemo || new Date(u.recorded_at).getTime() >= demoCutoff))
+        .filter(u => u.organization_id === org.id && (effectiveCutoff === 0 || new Date(u.recorded_at).getTime() >= effectiveCutoff))
         .reduce((sum, u) => sum + Number(u.minutes_used), 0);
       const orgUsage = Math.max(localUsage, remoteUsageByOrg.get(org.id) || 0);
 
