@@ -25,9 +25,12 @@ import {
   QrCode,
   X,
   ExternalLink,
+  Megaphone,
+  Send,
+  MessageSquare,
 } from 'lucide-react';
 import QRCode from 'qrcode';
-import { AudioService, AudioConnectionStatus } from '@/lib/audio/AudioService';
+import { AudioService, AudioConnectionStatus, AnnouncementData } from '@/lib/audio/AudioService';
 import { Mp3Recorder, RecordingState, Mp3RecordingResult } from '@/lib/audio/mp3Recorder';
 
 export default function TranslatorRoomPage() {
@@ -75,6 +78,12 @@ export default function TranslatorRoomPage() {
   const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
   const [recordingResult, setRecordingResult] = useState<Mp3RecordingResult | null>(null);
   const [recordingError, setRecordingError] = useState<string | null>(null);
+
+  // Announcements & Audience Interactivity state
+  const [announcements, setAnnouncements] = useState<AnnouncementData[]>([]);
+  const [announcementText, setAnnouncementText] = useState<string>('');
+  const [isSendingAnnouncement, setIsSendingAnnouncement] = useState<boolean>(false);
+  const [announcementSuccessMsg, setAnnouncementSuccessMsg] = useState<string | null>(null);
 
   const audioServiceRef = useRef<AudioService | null>(null);
   const mp3RecorderRef = useRef<Mp3Recorder | null>(null);
@@ -229,6 +238,92 @@ export default function TranslatorRoomPage() {
     };
   }, [sessionId]);
 
+  // Load announcements for this room
+  useEffect(() => {
+    if (!roomData?.id) return;
+    const fetchAnnouncements = async () => {
+      try {
+        const res = await fetch(`/api/rooms/${roomData.id}/announcements`, { cache: 'no-store' });
+        const data = await res.json();
+        if (data.success && Array.isArray(data.announcements)) {
+          setAnnouncements(
+            data.announcements.map((a: any) => ({
+              id: a.id,
+              roomId: a.room_id || a.roomId,
+              senderName: a.sender_name || a.senderName || 'Translator',
+              languageCode: a.language_code || a.languageCode,
+              message: a.message,
+              createdAt: a.created_at || a.createdAt,
+            }))
+          );
+        }
+      } catch {}
+    };
+    fetchAnnouncements();
+  }, [roomData?.id]);
+
+  const handleSendAnnouncement = async (textToSend?: string) => {
+    const content = (textToSend || announcementText || '').trim();
+    if (!content) return;
+    if (!roomData?.id) {
+      setError('Room not ready yet to send announcement.');
+      return;
+    }
+
+    setIsSendingAnnouncement(true);
+    setAnnouncementSuccessMsg(null);
+    try {
+      const senderName = `Translator (${roomData.languageName || 'Live'})`;
+      let livekitAnn: AnnouncementData | null = null;
+
+      // 1. Instant zero-latency broadcast via WebRTC DataChannel if live
+      if (audioServiceRef.current && broadcastState === 'live') {
+        try {
+          livekitAnn = await audioServiceRef.current.sendAnnouncement(content, {
+            senderName,
+            languageCode: roomData.languageCode,
+            roomId: roomData.id,
+          });
+        } catch (dcErr) {
+          console.warn('[Translator] WebRTC data channel warning:', dcErr);
+        }
+      }
+
+      // 2. Persist to REST database endpoint for late-joining audience
+      const res = await fetch(`/api/rooms/${roomData.id}/announcements`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: content,
+          senderName,
+          languageCode: roomData.languageCode,
+        }),
+      });
+
+      const resData = await res.json();
+      if (!res.ok || !resData.success) {
+        throw new Error(resData.error || 'Failed to persist announcement');
+      }
+
+      const finalItem: AnnouncementData = livekitAnn || {
+        id: resData.announcement?.id || `ann_${Date.now()}`,
+        roomId: roomData.id,
+        senderName,
+        languageCode: roomData.languageCode,
+        message: content,
+        createdAt: resData.announcement?.created_at || new Date().toISOString(),
+      };
+
+      setAnnouncements((prev) => [...prev, finalItem]);
+      setAnnouncementText('');
+      setAnnouncementSuccessMsg('Announcement broadcasted to audience!');
+      setTimeout(() => setAnnouncementSuccessMsg(null), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to send announcement');
+    } finally {
+      setIsSendingAnnouncement(false);
+    }
+  };
 
   // ==========================================================
   // TRANSLATOR CONTROLS
@@ -861,6 +956,150 @@ export default function TranslatorRoomPage() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* ==========================================================
+          INTERACTIVITY: AUDIENCE ANNOUNCEMENTS CONSOLE
+         ========================================================== */}
+      <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 sm:p-8 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+          <div className="space-y-1">
+            <h2 className="text-lg font-bold text-white flex items-center space-x-2">
+              <Megaphone className="w-5 h-5 text-emerald-400" />
+              <span>Audience Announcements</span>
+            </h2>
+            <p className="text-xs text-slate-400">
+              Broadcast real-time text announcements and alerts to all audience members listening in {roomData?.languageName || 'your channel'}.
+            </p>
+          </div>
+          <div className="flex items-center space-x-2">
+            <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>WebRTC Real-Time</span>
+            </span>
+            <span className="text-xs text-slate-500">
+              {announcements.length} {announcements.length === 1 ? 'Message' : 'Messages'}
+            </span>
+          </div>
+        </div>
+
+        {/* Quick Template Chips */}
+        <div className="space-y-2">
+          <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center space-x-1.5">
+            <MessageSquare className="w-3.5 h-3.5 text-blue-400" />
+            <span>Quick Announcement Templates</span>
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {[
+              '📢 Welcome everyone! Live translation is active.',
+              '⏸️ Short 2-minute technical break, resuming shortly.',
+              '📊 Speaker is referencing slide presentation.',
+              '❓ Audience Q&A session is now beginning.',
+              '👋 Session concluded. Thank you for listening!',
+            ].map((preset, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => setAnnouncementText(preset)}
+                className="px-3 py-1.5 rounded-xl text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700/80 hover:border-emerald-500/50 transition active:scale-95 text-left"
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Announcement Compose Box */}
+        <div className="space-y-3 bg-slate-950/70 p-4 rounded-xl border border-slate-800">
+          <div className="relative">
+            <textarea
+              value={announcementText}
+              onChange={(e) => setAnnouncementText(e.target.value.slice(0, 300))}
+              placeholder={`Type an announcement for your ${roomData?.languageName || 'audience'} listeners (e.g., "Starting in 2 minutes", "Speaker moving to next slide")...`}
+              rows={3}
+              className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition resize-none"
+            />
+            <div className="absolute bottom-2.5 right-3 text-[11px] text-slate-500 font-mono">
+              {announcementText.length}/300
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
+            <div className="text-xs text-slate-400">
+              {announcementSuccessMsg ? (
+                <span className="text-emerald-400 font-semibold flex items-center space-x-1.5">
+                  <CheckCircle className="w-4 h-4" />
+                  <span>{announcementSuccessMsg}</span>
+                </span>
+              ) : (
+                <span>Audience sees this immediately on their screen and hears a notification chime.</span>
+              )}
+            </div>
+
+            <button
+              onClick={() => handleSendAnnouncement()}
+              disabled={isSendingAnnouncement || !announcementText.trim()}
+              className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold text-xs sm:text-sm flex items-center justify-center space-x-2 transition shadow-lg shadow-emerald-500/20 active:scale-95"
+            >
+              {isSendingAnnouncement ? (
+                <span>Broadcasting...</span>
+              ) : (
+                <>
+                  <Send className="w-4 h-4" />
+                  <span>Broadcast to Audience</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Announcement History Log */}
+        <div className="space-y-3">
+          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+            Broadcasted Announcements ({announcements.length})
+          </label>
+
+          {announcements.length === 0 ? (
+            <div className="p-6 rounded-xl border border-dashed border-slate-800 text-center text-xs text-slate-500">
+              No announcements sent yet in this session. Messages you broadcast will appear here.
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+              {announcements
+                .slice()
+                .reverse()
+                .map((ann, idx) => {
+                  const timeStr = ann.createdAt
+                    ? new Date(ann.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                    : '';
+                  return (
+                    <div
+                      key={ann.id || idx}
+                      className="p-3.5 rounded-xl bg-slate-950 border border-slate-800/80 flex items-start justify-between gap-3"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs font-bold text-emerald-400">
+                            {ann.senderName || 'Translator'}
+                          </span>
+                          {ann.languageCode && (
+                            <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                              {ann.languageCode}
+                            </span>
+                          )}
+                          <span className="text-[11px] text-slate-500 font-mono">• {timeStr}</span>
+                        </div>
+                        <p className="text-sm text-slate-200 leading-relaxed">{ann.message}</p>
+                      </div>
+                      <span className="text-[10px] text-emerald-400 font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex-shrink-0">
+                        Delivered
+                      </span>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Share Audience Link Modal */}

@@ -18,6 +18,7 @@ import {
   Profile,
   UserRole,
   OrgStatus,
+  RoomAnnouncement,
 } from '@/lib/types/database';
 import { getSupabaseAdmin, isSupabaseConfigured } from './supabase';
 import { randomBytes, randomUUID } from 'crypto';
@@ -38,6 +39,7 @@ interface DataStore {
   profiles: Map<string, Profile>;
   passwords: Map<string, string>;
   systemSettings: Map<string, any>;
+  roomAnnouncements: Map<string, RoomAnnouncement>;
 }
 
 declare global {
@@ -72,6 +74,7 @@ function persistStoreToDisk(s: DataStore) {
       translators: Array.from(s.translators.entries()),
       translatorAssignments: Array.from(s.translatorAssignments.entries()),
       systemSettings: Array.from(s.systemSettings ? s.systemSettings.entries() : []),
+      roomAnnouncements: Array.from(s.roomAnnouncements ? s.roomAnnouncements.entries() : []),
     };
     fs.writeFileSync(filePath, JSON.stringify(dataToSave, null, 2), 'utf8');
     try { lastStoreLoadTime = fs.statSync(filePath).mtimeMs; } catch {}
@@ -151,6 +154,12 @@ function loadStoreFromDisk(s: DataStore) {
     if (parsed.systemSettings && Array.isArray(parsed.systemSettings)) {
       s.systemSettings = new Map(parsed.systemSettings);
     }
+    if (parsed.roomAnnouncements && Array.isArray(parsed.roomAnnouncements)) {
+      if (!s.roomAnnouncements) s.roomAnnouncements = new Map();
+      for (const [id, ann] of parsed.roomAnnouncements) {
+        s.roomAnnouncements.set(id, ann);
+      }
+    }
   } catch (err) {
     console.warn('[Repository] Failed to load store from disk:', err);
   }
@@ -172,6 +181,7 @@ function initMemoryStore(): DataStore {
     profiles: new Map(),
     passwords: new Map(),
     systemSettings: new Map(),
+    roomAnnouncements: new Map(),
   };
 
   const defaultSuperAdmin: Profile = {
@@ -3981,5 +3991,75 @@ export const Repository = {
     }
     store.systemSettings.set(key, value);
     persistStoreToDisk(store);
+  },
+
+  async createRoomAnnouncement(data: {
+    roomId: string;
+    senderName?: string;
+    languageCode?: string;
+    message: string;
+  }): Promise<RoomAnnouncement> {
+    syncStoreFromDiskIfNeeded(store);
+    if (!store.roomAnnouncements) {
+      store.roomAnnouncements = new Map();
+    }
+
+    const announcement: RoomAnnouncement = {
+      id: `ann_${randomUUID()}`,
+      room_id: data.roomId,
+      sender_name: data.senderName || 'Translator',
+      language_code: data.languageCode,
+      message: data.message,
+      created_at: new Date().toISOString(),
+    };
+
+    store.roomAnnouncements.set(announcement.id, announcement);
+    persistStoreToDisk(store);
+
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        try {
+          await admin.from('room_announcements').insert({
+            id: announcement.id,
+            room_id: announcement.room_id,
+            sender_name: announcement.sender_name,
+            language_code: announcement.language_code,
+            message: announcement.message,
+            created_at: announcement.created_at,
+          });
+        } catch {
+          // Graceful fallback if table is not yet provisioned in Supabase
+        }
+      }
+    }
+
+    return announcement;
+  },
+
+  async getRoomAnnouncements(roomId: string, limit: number = 50): Promise<RoomAnnouncement[]> {
+    syncStoreFromDiskIfNeeded(store);
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        try {
+          const { data, error } = await admin
+            .from('room_announcements')
+            .select('*')
+            .eq('room_id', roomId)
+            .order('created_at', { ascending: true })
+            .limit(limit);
+          if (!error && data && Array.isArray(data)) {
+            return data as RoomAnnouncement[];
+          }
+        } catch {}
+      }
+    }
+
+    if (!store.roomAnnouncements) return [];
+    return Array.from(store.roomAnnouncements.values())
+      .filter((a) => a.room_id === roomId)
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+      .slice(-limit);
   },
 };

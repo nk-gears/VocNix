@@ -16,8 +16,14 @@ import {
   ArrowRight,
   LogOut,
   RotateCcw,
+  Megaphone,
+  Bell,
+  ChevronDown,
+  ChevronUp,
+  Sparkles,
+  MessageSquare,
 } from 'lucide-react';
-import { AudioService, AudioConnectionStatus } from '@/lib/audio/AudioService';
+import { AudioService, AudioConnectionStatus, AnnouncementData } from '@/lib/audio/AudioService';
 
 interface LanguageOption {
   id: string;
@@ -61,6 +67,11 @@ export default function AudienceListenPage() {
   const [listenerCount, setListenerCount] = useState<number>(0);
   const [isExiting, setIsExiting] = useState<boolean>(false);
   const [hasExited, setHasExited] = useState<boolean>(false);
+
+  // Interactivity: Announcements & Live Updates
+  const [announcements, setAnnouncements] = useState<AnnouncementData[]>([]);
+  const [isAnnouncementExpanded, setIsAnnouncementExpanded] = useState<boolean>(true);
+  const [newAnnouncementAlert, setNewAnnouncementAlert] = useState<AnnouncementData | null>(null);
 
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const audioServiceRef = useRef<AudioService | null>(null);
@@ -152,6 +163,27 @@ export default function AudienceListenPage() {
     initAudiencePage();
   }, [eventToken]);
 
+  // Gentle notification sound using Web Audio API (two-tone chime)
+  const playAnnouncementChime = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, now); // D5
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.15); // A5
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.35);
+    } catch {}
+  };
+
   // 2. Helper to get or lazily initialize AudioService
   const getAudioService = () => {
     if (!audioServiceRef.current) {
@@ -172,6 +204,15 @@ export default function AudienceListenPage() {
         onRemoteTrackChange: (track) => {
           setHasRemoteTrack(Boolean(track));
         },
+        onAnnouncementReceived: (ann) => {
+          setAnnouncements((prev) => {
+            if (prev.some((a) => a.id === ann.id)) return prev;
+            return [...prev, ann];
+          });
+          setNewAnnouncementAlert(ann);
+          playAnnouncementChime();
+          setTimeout(() => setNewAnnouncementAlert(null), 7000);
+        },
         onError: (err) => {
           setError(err.message);
         },
@@ -179,6 +220,30 @@ export default function AudienceListenPage() {
     }
     return audioServiceRef.current;
   };
+
+  // Load past announcements for the locked room
+  useEffect(() => {
+    if (!lockedLanguage?.roomId) return;
+    const loadPastAnnouncements = async () => {
+      try {
+        const res = await fetch(`/api/rooms/${lockedLanguage.roomId}/announcements`, { cache: 'no-store' });
+        const data = await res.json();
+        if (data.success && Array.isArray(data.announcements)) {
+          setAnnouncements(
+            data.announcements.map((a: any) => ({
+              id: a.id,
+              roomId: a.room_id || a.roomId,
+              senderName: a.sender_name || a.senderName || 'Translator',
+              languageCode: a.language_code || a.languageCode,
+              message: a.message,
+              createdAt: a.created_at || a.createdAt,
+            }))
+          );
+        }
+      } catch {}
+    };
+    loadPastAnnouncements();
+  }, [lockedLanguage?.roomId]);
 
   useEffect(() => {
     const service = getAudioService();
@@ -756,6 +821,125 @@ export default function AudienceListenPage() {
               </p>
             </div>
           )}
+
+          {/* =========================================================================
+              INTERACTIVITY: AUDIENCE ANNOUNCEMENT BOX & LIVE UPDATES
+             ========================================================================= */}
+          <div className="space-y-3 pt-2 text-left">
+            {/* New incoming announcement banner toast */}
+            {newAnnouncementAlert && (
+              <div className="p-3.5 rounded-2xl bg-emerald-500/15 border-2 border-emerald-400/60 shadow-lg shadow-emerald-500/20 animate-bounce flex items-start space-x-3">
+                <div className="p-1.5 rounded-xl bg-emerald-500 text-slate-950 flex-shrink-0 mt-0.5">
+                  <Bell className="w-4 h-4 animate-spin text-slate-950" />
+                </div>
+                <div className="space-y-0.5 flex-1 min-w-0">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-emerald-300">
+                      New Announcement
+                    </span>
+                    <span className="text-[10px] text-emerald-400/80 font-mono">
+                      • {newAnnouncementAlert.senderName || 'Translator'}
+                    </span>
+                  </div>
+                  <p className="text-xs font-semibold text-white leading-relaxed break-words">
+                    {newAnnouncementAlert.message}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden shadow-inner">
+              {/* Header */}
+              <button
+                type="button"
+                onClick={() => setIsAnnouncementExpanded(!isAnnouncementExpanded)}
+                className="w-full p-4 flex items-center justify-between hover:bg-slate-900/60 transition text-left"
+              >
+                <div className="flex items-center space-x-2.5">
+                  <div className="p-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                    <Megaphone className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs sm:text-sm font-bold text-white">Announcements</span>
+                      {announcements.length > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold border border-emerald-500/30">
+                          {announcements.length}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-400">Messages & updates from the translator</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2 text-slate-400">
+                  <span className="text-[10px] hidden sm:inline text-slate-500">
+                    {isAnnouncementExpanded ? 'Collapse' : 'Expand'}
+                  </span>
+                  {isAnnouncementExpanded ? (
+                    <ChevronUp className="w-4 h-4 text-slate-400" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-slate-400" />
+                  )}
+                </div>
+              </button>
+
+              {/* Collapsible Content */}
+              {isAnnouncementExpanded && (
+                <div className="px-4 pb-4 border-t border-slate-900 space-y-2.5 pt-3">
+                  {announcements.length === 0 ? (
+                    <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800/60 text-center space-y-1">
+                      <MessageSquare className="w-5 h-5 text-slate-600 mx-auto" />
+                      <p className="text-xs text-slate-400 font-medium">No announcements yet</p>
+                      <p className="text-[11px] text-slate-500">
+                        When the translator broadcasts messages or instructions, they will appear here live.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {announcements
+                        .slice()
+                        .reverse()
+                        .map((ann, idx) => {
+                          const timeStr = ann.createdAt
+                            ? new Date(ann.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            : '';
+                          return (
+                            <div
+                              key={ann.id || idx}
+                              className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1 shadow-sm"
+                            >
+                              <div className="flex items-center justify-between text-[11px]">
+                                <div className="flex items-center space-x-1.5">
+                                  <span className="font-bold text-emerald-400">
+                                    {ann.senderName || 'Translator'}
+                                  </span>
+                                  {ann.languageCode && (
+                                    <span className="text-[9px] uppercase font-mono px-1 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                                      {ann.languageCode}
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[10px] text-slate-500 font-mono">{timeStr}</span>
+                              </div>
+                              <p className="text-xs text-slate-200 leading-relaxed break-words">{ann.message}</p>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-900/80">
+                    <span className="flex items-center space-x-1 text-emerald-400">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>Live Data Sync</span>
+                    </span>
+                    <span>Synchronized across audience</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Exit / Leave Channel Action Button */}
           <div className="pt-2 border-t border-slate-800/80">

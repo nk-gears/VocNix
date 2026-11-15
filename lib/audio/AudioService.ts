@@ -19,11 +19,21 @@ export type AudioConnectionStatus =
   | 'disconnected'
   | 'error';
 
+export interface AnnouncementData {
+  id: string;
+  roomId?: string;
+  senderName?: string;
+  languageCode?: string;
+  message: string;
+  createdAt: string;
+}
+
 export interface AudioServiceCallbacks {
   onConnectionChange?: (state: AudioConnectionStatus) => void;
   onParticipantCountChange?: (count: number) => void;
   onAudioLevelChange?: (level: number) => void; // 0.0 to 1.0
   onRemoteTrackChange?: (track: RemoteTrack | null) => void;
+  onAnnouncementReceived?: (announcement: AnnouncementData) => void;
   onError?: (err: Error) => void;
 }
 
@@ -235,6 +245,75 @@ export class AudioService {
     this.room.on(RoomEvent.ParticipantDisconnected, () => {
       this.updateParticipantCount();
     });
+
+    // Real-time WebRTC DataChannel listener for announcements and interactive messages
+    this.room.on(
+      RoomEvent.DataReceived,
+      (payload: Uint8Array, participant?: RemoteParticipant, kind?: any, topic?: string) => {
+        try {
+          const text = new TextDecoder().decode(payload);
+          const data = JSON.parse(text);
+          if (data && (data.type === 'announcement' || topic === 'announcement' || data.message)) {
+            const announcement: AnnouncementData = {
+              id: data.id || `ann_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+              roomId: data.roomId,
+              senderName: data.senderName || participant?.name || participant?.identity || 'Translator',
+              languageCode: data.languageCode,
+              message: data.message || data.text || '',
+              createdAt: data.createdAt || new Date().toISOString(),
+            };
+            this.callbacks.onAnnouncementReceived?.(announcement);
+          }
+        } catch (err) {
+          console.warn('[AudioService] Failed to parse received data packet:', err);
+        }
+      }
+    );
+  }
+
+  // ==========================================================
+  // INTERACTIVITY: REAL-TIME ANNOUNCEMENTS (WebRTC DataChannel)
+  // ==========================================================
+  public async sendAnnouncement(
+    message: string,
+    metadata?: {
+      senderName?: string;
+      languageCode?: string;
+      roomId?: string;
+    }
+  ): Promise<AnnouncementData> {
+    if (!this.room || !this.room.localParticipant) {
+      throw new Error('Room is not connected. Broadcast must be active to publish real-time announcements.');
+    }
+
+    const trimmed = (message || '').trim();
+    if (!trimmed) {
+      throw new Error('Announcement message cannot be empty');
+    }
+
+    const announcement: AnnouncementData = {
+      id: `ann_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      roomId: metadata?.roomId,
+      senderName: metadata?.senderName || this.room.localParticipant.name || 'Translator',
+      languageCode: metadata?.languageCode,
+      message: trimmed,
+      createdAt: new Date().toISOString(),
+    };
+
+    const payload = new TextEncoder().encode(
+      JSON.stringify({
+        type: 'announcement',
+        ...announcement,
+      })
+    );
+
+    // Reliable data transmission via LiveKit WebRTC DataChannel
+    await this.room.localParticipant.publishData(payload, {
+      reliable: true,
+      topic: 'announcement',
+    });
+
+    return announcement;
   }
 
   private updateParticipantCount(): void {

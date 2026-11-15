@@ -199,3 +199,13 @@ export interface SupportTicket {
   created_at: string;
   updated_at: string;
 }
+
+export interface RoomAnnouncement {
+  id: string;
+  room_id: string;
+  sender_name?: string;
+  language_code?: string;
+  message: string;
+  created_at: string;
+}
+
