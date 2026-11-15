@@ -85,6 +85,7 @@ export async function POST(req: NextRequest) {
         eventId: event.id,
         eventPublicToken: event.public_access_token,
         startedAt: session.started_at,
+        useMono: event.use_mono !== false && (event as any).useMono !== false,
         organization: organization ? {
           id: organization.id,
           name: organization.name,

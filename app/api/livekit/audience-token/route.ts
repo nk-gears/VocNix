@@ -126,6 +126,7 @@ export async function POST(req: NextRequest) {
         languageName: language?.language_name || 'Translation',
         languageCode: language?.language_code || 'xx',
         listeners: currentListeners,
+        useMono: event.use_mono !== false && (event as any).useMono !== false,
       },
     });
 

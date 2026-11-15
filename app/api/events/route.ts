@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { title, description, scheduled_start, scheduled_end, languages } = body;
+    const { title, description, scheduled_start, scheduled_end, languages, use_mono, useMono } = body;
 
     if (!title || !title.trim()) {
       return NextResponse.json(
@@ -74,6 +74,8 @@ export async function POST(req: NextRequest) {
       scheduled_start: scheduled_start || new Date().toISOString(),
       scheduled_end,
       languages,
+      use_mono: use_mono !== false && useMono !== false,
+      useMono: use_mono !== false && useMono !== false,
     });
 
     return NextResponse.json(

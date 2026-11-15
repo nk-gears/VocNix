@@ -47,6 +47,7 @@ export default function TranslatorRoomPage() {
     eventId?: string;
     eventPublicToken?: string;
     startedAt?: string;
+    useMono?: boolean;
     organization?: { id: string; name: string; logo_url?: string } | null;
   } | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -253,6 +254,7 @@ export default function TranslatorRoomPage() {
         wsUrl: resolvedWsUrl,
         token: livekitToken,
         audioDeviceId: selectedDeviceId || undefined,
+        useMono: roomData?.useMono !== false,
       });
       setBroadcastState('live');
       if (sessionId) {
@@ -536,6 +538,11 @@ export default function TranslatorRoomPage() {
               </button>
             </>
           )}
+
+          <div className="px-3 py-1.5 rounded-xl text-xs font-medium border flex items-center space-x-1.5 bg-slate-900/60 border-slate-800 text-slate-300">
+            <Radio className="w-3.5 h-3.5 text-emerald-400" />
+            <span>{roomData?.useMono !== false ? 'Mono (Bandwidth Saver)' : 'Stereo (Full)'}</span>
+          </div>
 
           <div
             className={`px-4 py-2 rounded-xl text-xs font-bold tracking-wider uppercase flex items-center space-x-2 border ${

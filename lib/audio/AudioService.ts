@@ -8,6 +8,7 @@ import {
   createLocalAudioTrack,
   ConnectionState,
   TrackPublication,
+  AudioPresets,
 } from 'livekit-client';
 
 export type AudioConnectionStatus =
@@ -35,6 +36,7 @@ export class AudioService {
   private callbacks: AudioServiceCallbacks = {};
   private remoteAudioElement: HTMLAudioElement | null = null;
   private isMicMuted: boolean = false;
+  private isMonoChannel: boolean = true;
 
   constructor(callbacks: AudioServiceCallbacks = {}) {
     this.callbacks = callbacks;
@@ -52,6 +54,10 @@ export class AudioService {
     return this.isMicMuted;
   }
 
+  public isMono(): boolean {
+    return this.isMonoChannel;
+  }
+
   // ==========================================================
   // TRANSLATOR AUDIO PIPELINE
   // ==========================================================
@@ -59,20 +65,26 @@ export class AudioService {
     wsUrl: string;
     token: string;
     audioDeviceId?: string;
+    useMono?: boolean;
   }): Promise<void> {
     try {
       this.callbacks.onConnectionChange?.('connecting');
+      const useMono = params.useMono !== false;
+      this.isMonoChannel = useMono;
 
       // 1. Request microphone stream with echo cancellation and noise suppression
+      // Channel count: 1 for mono (saves ~50% bandwidth), 2 for stereo
       const audioOptions: {
         echoCancellation?: boolean;
         noiseSuppression?: boolean;
         autoGainControl?: boolean;
+        channelCount?: number;
         deviceId?: string;
       } = {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true,
+        channelCount: useMono ? 1 : 2,
       };
       if (params.audioDeviceId) {
         audioOptions.deviceId = params.audioDeviceId;
@@ -85,6 +97,7 @@ export class AudioService {
       this.setupLocalAudioAnalyser(this.localAudioTrack.mediaStreamTrack);
 
       // 3. Connect to real-time audio room
+      // When mono is enabled: use Speech preset (24kbps) + DTX to optimize bandwidth
       this.room = new Room({
         adaptiveStream: true,
         dynacast: true,
@@ -92,6 +105,12 @@ export class AudioService {
           autoGainControl: true,
           echoCancellation: true,
           noiseSuppression: true,
+          channelCount: useMono ? 1 : 2,
+        },
+        publishDefaults: {
+          audioPreset: useMono ? AudioPresets.speech : AudioPresets.musicStereo,
+          dtx: true,
+          red: true,
         },
       });
 
@@ -99,10 +118,13 @@ export class AudioService {
 
       await this.room.connect(params.wsUrl, params.token);
 
-      // 4. Publish real microphone track
+      // 4. Publish real microphone track with speech/stereo preset
       await this.room.localParticipant.publishTrack(this.localAudioTrack, {
         name: 'translator-mic',
         source: Track.Source.Microphone,
+        audioPreset: useMono ? AudioPresets.speech : AudioPresets.musicStereo,
+        dtx: true,
+        red: true,
       });
 
       this.callbacks.onConnectionChange?.('connected');
@@ -122,9 +144,12 @@ export class AudioService {
     wsUrl: string;
     token: string;
     targetAudioElement?: HTMLAudioElement | null;
+    useMono?: boolean;
   }): Promise<void> {
     try {
       this.callbacks.onConnectionChange?.('connecting');
+      const useMono = params.useMono !== false;
+      this.isMonoChannel = useMono;
 
       if (params.targetAudioElement) {
         this.remoteAudioElement = params.targetAudioElement;

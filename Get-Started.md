@@ -110,6 +110,10 @@ VocNix uses sub-second WebRTC audio streaming:
   ```bash
   node test_super_admin.mjs
   ```
+* **Run Mono/Stereo Audio Bandwidth Test Suite:**
+  ```bash
+  node test_mono_stereo_audio.mjs
+  ```
 * **Run End-to-End Platform Tests:**
   ```bash
   node test_e2e_platform.mjs
@@ -117,7 +121,27 @@ VocNix uses sub-second WebRTC audio streaming:
 
 ---
 
-## 6. Architecture & Data Storage Note
+## 6. DigitalOcean Droplet SSH & Server Exploration
+
+To connect to and inspect the DigitalOcean WebRTC / LiveKit Droplet (`vocnix-livekit`):
+
+```bash
+# Launch interactive droplet manager & exploration menu
+npm run droplet
+# or directly:
+./scripts/droplet-ssh.sh
+```
+
+### CLI Shortcut Options
+* **Direct SSH Shell:** `./scripts/droplet-ssh.sh --connect`
+* **Automated Exploration & System Audit:** `./scripts/droplet-ssh.sh --explore`
+* **Tail LiveKit Logs:** `./scripts/droplet-ssh.sh --logs`
+* **Check Power Status:** `./scripts/droplet-ssh.sh --status`
+* **Boot Droplet (via API):** `./scripts/droplet-ssh.sh --power-on`
+
+---
+
+## 7. Architecture & Data Storage Note
 * **Primary DB:** Supabase PostgreSQL with Row Level Security (RLS).
 * **Local Fallback:** In environments where Supabase is offline or during offline testing, the platform falls back to `data/vocnix_db.json`.
 * Both auth systems are kept synchronized for seamless local testing.

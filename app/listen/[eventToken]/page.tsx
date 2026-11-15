@@ -39,6 +39,7 @@ export default function AudienceListenPage() {
     title: string;
     description?: string;
     status: string;
+    useMono?: boolean;
     organization?: { id: string; name: string; logo_url?: string } | null;
   } | null>(null);
 
@@ -330,10 +331,12 @@ export default function AudienceListenPage() {
       }
 
       const service = getAudioService();
+      const useMono = data.room?.useMono !== false && eventData?.useMono !== false;
       await service.connectAudience({
         wsUrl: resolvedWsUrl,
         token: data.token,
         targetAudioElement: audioElementRef.current,
+        useMono,
       });
 
       // Browser Autoplay: Play audio
@@ -679,6 +682,13 @@ export default function AudienceListenPage() {
             <div className="flex items-center space-x-1 text-slate-400">
               <Users className="w-3.5 h-3.5 text-blue-400" />
               <span>{listenerCount} Listening</span>
+            </div>
+            <span>•</span>
+            <div className="flex items-center space-x-1 text-slate-400">
+              <Radio className="w-3 h-3 text-emerald-400" />
+              <span className="text-[11px] text-emerald-400 font-medium">
+                {eventData?.useMono !== false ? 'Mono (Data Saver)' : 'Stereo Audio'}
+              </span>
             </div>
           </div>
 

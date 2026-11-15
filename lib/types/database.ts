@@ -65,6 +65,8 @@ export interface Organization {
   admin_user_id?: string;
   is_demo?: boolean;
   isDemo?: boolean;
+  use_mono?: boolean;
+  useMono?: boolean;
   last_usage_reset_at?: string;
   created_at: string;
   updated_at: string;
@@ -101,6 +103,8 @@ export interface Event {
   public_access_token: string;
   is_demo?: boolean;
   isDemo?: boolean;
+  use_mono?: boolean;
+  useMono?: boolean;
   created_at: string;
   updated_at: string;
 }

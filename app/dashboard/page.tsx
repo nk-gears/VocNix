@@ -93,6 +93,7 @@ export default function DashboardPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newEventTitle, setNewEventTitle] = useState('');
   const [newEventDesc, setNewEventDesc] = useState('');
+  const [newEventUseMono, setNewEventUseMono] = useState(true);
   const [selectedLanguages, setSelectedLanguages] = useState<Array<{ code: string; name: string }>>([
     { code: 'ta', name: 'Tamil' },
     { code: 'hi', name: 'Hindi' },
@@ -104,6 +105,7 @@ export default function DashboardPage() {
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [editStatus, setEditStatus] = useState<string>('scheduled');
+  const [editUseMono, setEditUseMono] = useState(true);
   const [newLangCode, setNewLangCode] = useState('');
   const [newLangName, setNewLangName] = useState('');
 
@@ -382,6 +384,7 @@ export default function DashboardPage() {
           description: newEventDesc.trim(),
           scheduled_start: new Date().toISOString(),
           languages: selectedLanguages,
+          use_mono: newEventUseMono,
         }),
       });
 
@@ -396,6 +399,8 @@ export default function DashboardPage() {
       if (data.event) {
         const newEventWithRooms = {
           ...data.event,
+          use_mono: newEventUseMono,
+          useMono: newEventUseMono,
           languages: data.event.languages || selectedLanguages.map((l) => ({ language_code: l.code, language_name: l.name })),
           rooms: data.rooms || data.event.rooms || [],
         };
@@ -413,6 +418,7 @@ export default function DashboardPage() {
 
       setNewEventTitle('');
       setNewEventDesc('');
+      setNewEventUseMono(true);
       setIsCreateModalOpen(false);
       setCreatingEvent(false);
       fetchDashboardData();
@@ -428,6 +434,7 @@ export default function DashboardPage() {
     setEditTitle(event.title);
     setEditDesc(event.description || '');
     setEditStatus(event.status);
+    setEditUseMono(event.use_mono !== false && event.useMono !== false);
   };
 
   const handleSaveEditEvent = async (e: React.FormEvent) => {
@@ -442,6 +449,7 @@ export default function DashboardPage() {
           title: editTitle.trim(),
           description: editDesc.trim(),
           status: editStatus,
+          use_mono: editUseMono,
         }),
       });
       const data = await res.json();
@@ -1131,6 +1139,20 @@ export default function DashboardPage() {
                           >
                             {event.status}
                           </span>
+                          <span
+                            className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${
+                              event.use_mono !== false && event.useMono !== false
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                : 'bg-purple-500/10 text-purple-400 border-purple-500/30'
+                            }`}
+                            title={
+                              event.use_mono !== false && event.useMono !== false
+                                ? 'Mono Audio Mode (saves ~50% bandwidth on broadcast and receiving)'
+                                : 'Stereo Audio Mode'
+                            }
+                          >
+                            {event.use_mono !== false && event.useMono !== false ? 'Mono (Saver)' : 'Stereo'}
+                          </span>
                         </div>
                         {event.description && (
                           <p className="text-xs text-slate-400 mt-1">{event.description}</p>
@@ -1800,6 +1822,30 @@ export default function DashboardPage() {
                 />
               </div>
 
+              {/* Audio Channel Mode Toggle (Mono Default / Stereo) */}
+              <div className="flex items-center justify-between p-3.5 bg-slate-950 border border-slate-800 rounded-xl">
+                <div className="pr-4">
+                  <div className="text-xs font-semibold text-slate-200 flex items-center space-x-2">
+                    <span>Audio Channel Mode</span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                      {newEventUseMono ? 'Mono (Default · Bandwidth Saver)' : 'Stereo (Full Audio)'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Mono optimizes human speech translation and saves ~50% network bandwidth across both translators and audience members. Toggle off to use regular stereo.
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={newEventUseMono}
+                    onChange={(e) => setNewEventUseMono(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                </label>
+              </div>
+
               <div className="space-y-2">
                 <label className="text-xs font-semibold text-slate-300">
                   Dynamic Translation Languages * (Select at least 1)
@@ -1894,6 +1940,30 @@ export default function DashboardPage() {
                   <option value="live">Live</option>
                   <option value="ended">Ended</option>
                 </select>
+              </div>
+
+              {/* Audio Channel Mode Toggle (Mono Default / Stereo) */}
+              <div className="flex items-center justify-between p-3.5 bg-slate-950 border border-slate-800 rounded-xl">
+                <div className="pr-4">
+                  <div className="text-xs font-semibold text-slate-200 flex items-center space-x-2">
+                    <span>Audio Channel Mode</span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                      {editUseMono ? 'Mono (Default · Bandwidth Saver)' : 'Stereo (Full Audio)'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Mono optimizes human speech translation and cuts bandwidth by ~50% across translators and audience members. Toggle off to use regular stereo mode.
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={editUseMono}
+                    onChange={(e) => setEditUseMono(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                </label>
               </div>
 
               {/* Dynamic Languages in this Event */}

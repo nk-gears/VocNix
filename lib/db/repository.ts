@@ -349,6 +349,22 @@ function isSchemaColumnError(err: any): boolean {
   );
 }
 
+function isNetworkError(err: any): boolean {
+  if (!err) return false;
+  const msg = String(err?.message || '').toLowerCase();
+  const details = String(err?.details || '').toLowerCase();
+  return (
+    msg.includes('fetch failed') ||
+    msg.includes('enotfound') ||
+    msg.includes('econnrefused') ||
+    msg.includes('network') ||
+    msg.includes('etimedout') ||
+    details.includes('enotfound') ||
+    details.includes('econnrefused') ||
+    details.includes('fetch failed')
+  );
+}
+
 function mapPlanIdentifier(rawPlanIdOrSlug?: string | null, plans?: Plan[]): Plan | undefined {
   if (!rawPlanIdOrSlug || !plans || plans.length === 0) return undefined;
   const key = rawPlanIdOrSlug.trim().toLowerCase();
@@ -635,6 +651,8 @@ export const Repository = {
     scheduled_start: string;
     scheduled_end?: string;
     languages: Array<{ code: string; name: string }>;
+    use_mono?: boolean;
+    useMono?: boolean;
   }): Promise<{ event: Event & { languages: EventLanguage[]; rooms: TranslationRoom[] }; rooms: TranslationRoom[] }> {
     const eventId = randomUUID();
     const publicAccessToken = randomBytes(16).toString('hex');
@@ -642,6 +660,7 @@ export const Repository = {
 
     const org = await this.getOrganization(params.organization_id);
     const isDemo = isDemoOrganization(org) || params.title.toLowerCase().includes('demo');
+    const useMono = params.use_mono !== false && params.useMono !== false;
 
     const event: Event = {
       id: eventId,
@@ -654,6 +673,8 @@ export const Repository = {
       public_access_token: publicAccessToken,
       is_demo: isDemo,
       isDemo: isDemo,
+      use_mono: useMono,
+      useMono: useMono,
       created_at: now,
       updated_at: now,
     };
@@ -738,55 +759,68 @@ export const Repository = {
       let { error: eventErr } = await admin.from('events').insert({
         ...baseEventInsert,
         is_demo: isDemo,
+        use_mono: useMono,
       });
 
       if (eventErr && isSchemaColumnError(eventErr)) {
-        const retry = await admin.from('events').insert(baseEventInsert);
-        eventErr = retry.error;
-      }
-
-      if (eventErr) {
-        console.error('[Repository] Supabase insert event failed:', eventErr);
-        throw new Error(`Failed to save event in Supabase database: ${eventErr.message}`);
-      }
-
-      // 3. Insert Event Languages
-      if (generatedLanguages.length > 0) {
-        const { error: langErr } = await admin.from('event_languages').insert(
-          generatedLanguages.map((l) => ({
-            id: l.id,
-            event_id: l.event_id,
-            language_code: l.language_code,
-            language_name: l.language_name,
-            created_at: l.created_at,
-          }))
-        );
-
-        if (langErr) {
-          console.error('[Repository] Supabase insert languages failed:', langErr);
-          throw new Error(`Failed to save event languages in Supabase database: ${langErr.message}`);
+        const retryWithDemo = await admin.from('events').insert({
+          ...baseEventInsert,
+          is_demo: isDemo,
+        });
+        if (retryWithDemo.error && isSchemaColumnError(retryWithDemo.error)) {
+          const retryBase = await admin.from('events').insert(baseEventInsert);
+          eventErr = retryBase.error;
+        } else {
+          eventErr = retryWithDemo.error;
         }
       }
 
-      // 4. Insert Dynamic Translation Rooms
-      if (generatedRooms.length > 0) {
-        const { error: roomErr } = await admin.from('translation_rooms').insert(
-          generatedRooms.map((r) => ({
-            id: r.id,
-            event_id: r.event_id,
-            event_language_id: r.event_language_id,
-            livekit_room_name: r.livekit_room_name,
-            secure_room_token: r.secure_room_token,
-            status: r.status,
-            active_listener_count: r.active_listener_count,
-            created_at: r.created_at,
-            updated_at: r.updated_at,
-          }))
-        );
+      if (eventErr) {
+        if (isNetworkError(eventErr)) {
+          console.warn('[Repository] Supabase offline/unreachable during insert event, falling back to local storage:', eventErr.message);
+        } else {
+          console.error('[Repository] Supabase insert event failed:', eventErr);
+          throw new Error(`Failed to save event in Supabase database: ${eventErr.message}`);
+        }
+      } else {
+        // 3. Insert Event Languages
+        if (generatedLanguages.length > 0) {
+          const { error: langErr } = await admin.from('event_languages').insert(
+            generatedLanguages.map((l) => ({
+              id: l.id,
+              event_id: l.event_id,
+              language_code: l.language_code,
+              language_name: l.language_name,
+              created_at: l.created_at,
+            }))
+          );
 
-        if (roomErr) {
-          console.error('[Repository] Supabase insert translation rooms failed:', roomErr);
-          throw new Error(`Failed to save translation rooms in Supabase database: ${roomErr.message}`);
+          if (langErr && !isNetworkError(langErr)) {
+            console.error('[Repository] Supabase insert languages failed:', langErr);
+            throw new Error(`Failed to save event languages in Supabase database: ${langErr.message}`);
+          }
+        }
+
+        // 4. Insert Dynamic Translation Rooms
+        if (generatedRooms.length > 0) {
+          const { error: roomErr } = await admin.from('translation_rooms').insert(
+            generatedRooms.map((r) => ({
+              id: r.id,
+              event_id: r.event_id,
+              event_language_id: r.event_language_id,
+              livekit_room_name: r.livekit_room_name,
+              secure_room_token: r.secure_room_token,
+              status: r.status,
+              active_listener_count: r.active_listener_count,
+              created_at: r.created_at,
+              updated_at: r.updated_at,
+            }))
+          );
+
+          if (roomErr && !isNetworkError(roomErr)) {
+            console.error('[Repository] Supabase insert translation rooms failed:', roomErr);
+            throw new Error(`Failed to save translation rooms in Supabase database: ${roomErr.message}`);
+          }
         }
       }
     }
@@ -846,6 +880,8 @@ export const Repository = {
         if (!error && data) {
           const mapped = data.map((e: any) => ({
             ...e,
+            use_mono: e.use_mono !== false && e.useMono !== false,
+            useMono: e.use_mono !== false && e.useMono !== false,
             languages: e.languages || [],
             rooms: (e.rooms || []).map((r: any) => ({
               ...r,
@@ -868,8 +904,12 @@ export const Repository = {
         }
 
         if (error) {
-          console.error('[Repository] Error fetching events from Supabase:', error);
-          throw new Error(`Supabase query failed: ${error.message}`);
+          if (isNetworkError(error)) {
+            console.warn('[Repository] Supabase offline/unreachable in getEvents, returning local store:', error.message);
+          } else {
+            console.error('[Repository] Error fetching events from Supabase:', error);
+            throw new Error(`Supabase query failed: ${error.message}`);
+          }
         }
       }
     }
@@ -890,7 +930,8 @@ export const Repository = {
           ...r,
           status: (r.status === 'live' ? 'live' : 'idle') as RoomStatus,
         }));
-      return { ...event, languages, rooms };
+      const isMono = event.use_mono !== false && event.useMono !== false;
+      return { ...event, use_mono: isMono, useMono: isMono, languages, rooms };
     });
   },
 
@@ -909,8 +950,11 @@ export const Repository = {
           .single();
 
         if (!error && data) {
+          const isMono = data.use_mono !== false && data.useMono !== false;
           return {
             ...data,
+            use_mono: isMono,
+            useMono: isMono,
             languages: data.languages || [],
             rooms: (data.rooms || []).map((r: any) => ({
               ...r,
@@ -923,6 +967,7 @@ export const Repository = {
     }
     const event = store.events.get(eventId);
     if (!event) return null;
+    const isMono = event.use_mono !== false && event.useMono !== false;
     const languages = Array.from(store.eventLanguages.values()).filter((l) => l.event_id === event.id);
     const rooms = Array.from(store.translationRooms.values())
       .filter((r) => r.event_id === event.id)
@@ -931,7 +976,7 @@ export const Repository = {
         status: (r.status === 'live' ? 'live' : 'idle') as RoomStatus,
       }));
     const org = event.organization_id ? (store.organizations.get(event.organization_id) || await this.getOrganization(event.organization_id)) : null;
-    return { ...event, languages, rooms, organization: org };
+    return { ...event, use_mono: isMono, useMono: isMono, languages, rooms, organization: org };
   },
 
   async getEventByPublicToken(token: string): Promise<(Event & { languages: EventLanguage[]; rooms: TranslationRoom[]; organization?: Organization | null }) | null> {
@@ -949,8 +994,11 @@ export const Repository = {
           .single();
 
         if (!error && data) {
+          const isMono = data.use_mono !== false && data.useMono !== false;
           return {
             ...data,
+            use_mono: isMono,
+            useMono: isMono,
             languages: data.languages || [],
             rooms: (data.rooms || []).map((r: any) => ({
               ...r,
@@ -971,7 +1019,8 @@ export const Repository = {
         status: (r.status === 'live' ? 'live' : 'idle') as RoomStatus,
       }));
     const org = event.organization_id ? (store.organizations.get(event.organization_id) || await this.getOrganization(event.organization_id)) : null;
-    return { ...event, languages, rooms, organization: org };
+    const isMono = event.use_mono !== false && event.useMono !== false;
+    return { ...event, use_mono: isMono, useMono: isMono, languages, rooms, organization: org };
   },
 
   async updateEventStatus(eventId: string, status: Event['status']): Promise<Event | null> {
@@ -2151,8 +2200,13 @@ export const Repository = {
     scheduled_start?: string;
     scheduled_end?: string;
     status?: Event['status'];
+    use_mono?: boolean;
+    useMono?: boolean;
   }): Promise<Event | null> {
     const now = new Date().toISOString();
+    const isMonoUpdated = updates.use_mono !== undefined || updates.useMono !== undefined;
+    const resolvedMono = isMonoUpdated ? (updates.use_mono !== false && updates.useMono !== false) : undefined;
+
     if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();
       if (admin) {
@@ -2162,20 +2216,43 @@ export const Repository = {
         if (updates.scheduled_start !== undefined) updateData.scheduled_start = updates.scheduled_start;
         if (updates.scheduled_end !== undefined) updateData.scheduled_end = updates.scheduled_end;
         if (updates.status !== undefined) updateData.status = updates.status;
+        if (resolvedMono !== undefined) updateData.use_mono = resolvedMono;
 
-        const { data, error } = await admin
+        let { data, error } = await admin
           .from('events')
           .update(updateData)
           .eq('id', eventId)
           .select('*')
           .single();
 
+        if (error && isSchemaColumnError(error) && resolvedMono !== undefined) {
+          delete updateData.use_mono;
+          const retry = await admin
+            .from('events')
+            .update(updateData)
+            .eq('id', eventId)
+            .select('*')
+            .single();
+          data = retry.data;
+          error = retry.error;
+        }
+
         if (error) {
-          throw new Error(`Failed to update event in Supabase: ${error.message}`);
+          if (isNetworkError(error)) {
+            console.warn('[Repository] Supabase offline/unreachable during editEvent, updating local store:', error.message);
+          } else {
+            throw new Error(`Failed to update event in Supabase: ${error.message}`);
+          }
         }
         if (data) {
-          store.events.set(eventId, data as Event);
-          return data as Event;
+          const finalEv = {
+            ...data,
+            use_mono: data.use_mono !== undefined ? data.use_mono : resolvedMono ?? true,
+            useMono: data.use_mono !== undefined ? data.use_mono : resolvedMono ?? true,
+          } as Event;
+          store.events.set(eventId, finalEv);
+          persistStoreToDisk(store);
+          return finalEv;
         }
       }
     }
@@ -2186,6 +2263,10 @@ export const Repository = {
     if (updates.scheduled_start) event.scheduled_start = updates.scheduled_start;
     if (updates.scheduled_end !== undefined) event.scheduled_end = updates.scheduled_end;
     if (updates.status) event.status = updates.status;
+    if (resolvedMono !== undefined) {
+      event.use_mono = resolvedMono;
+      event.useMono = resolvedMono;
+    }
     event.updated_at = now;
     store.events.set(eventId, event);
     await this.logActivity(event.organization_id, 'EVENT_UPDATED', `Event "${event.title}" was updated (status: ${event.status})`);

@@ -79,6 +79,7 @@ export async function GET(
         description: event.description,
         status: event.status,
         scheduledStart: event.scheduled_start,
+        useMono: event.use_mono !== false && (event as any).useMono !== false,
         organization: event.organization ? {
           id: event.organization.id,
           name: event.organization.name,
